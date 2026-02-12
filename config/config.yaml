@@ -1,0 +1,18 @@
+# 城市列表配置
+# location_id 格式为 "纬度,经度"
+cities:
+  - name: 北京
+    location_id: "39.90,116.40"
+  - name: 上海
+    location_id: "31.23,121.47"
+  - name: 深圳
+    location_id: "22.54,114.06"
+
+# OpenWeatherMap API 配置
+# 免费版: 每天 1000 次调用
+openweathermap:
+  api_key: "${OPENWEATHERMAP_API_KEY}"  # 通过环境变量注入
+
+# 输出配置
+output:
+  dir: "./output"
