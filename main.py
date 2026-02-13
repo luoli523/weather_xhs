@@ -18,6 +18,8 @@ from src.weather import OpenWeatherClient
 from src.mock_weather import MockWeatherClient
 from src.clothing_index import generate_clothing_advice
 from src.content_generator import generate_markdown, save_markdown
+from src.telegram_notifier import send_images as telegram_send_images
+from src.telegram_notifier import send_images_simple as telegram_send_simple
 
 
 def parse_args() -> argparse.Namespace:
@@ -29,6 +31,11 @@ def parse_args() -> argparse.Namespace:
         choices=["female", "male", "neutral", "random"],
         default="female",
         help="指定人物性别 (female=女性, male=男性, neutral=中性, random=随机)，默认 female",
+    )
+    parser.add_argument(
+        "--send-only",
+        action="store_true",
+        help="跳过生成流程，仅发送当天已有图片到 Telegram",
     )
     return parser.parse_args()
 
@@ -87,6 +94,23 @@ async def main():
     gender = _gender_map.get(args.gender) if args.gender != "random" else None
 
     print("=== 天气穿搭指南生成系统 ===\n")
+
+    # --send-only 模式：跳过生成，直接发送当天已有图片
+    if args.send_only:
+        load_dotenv()
+        today = datetime.now().strftime("%Y-%m-%d")
+        output_dir = Path("output")
+        images = sorted(output_dir.glob(f"*_{today}.png"))
+        if not images:
+            print(f"❌ 未找到当天图片（{output_dir}/*_{today}.png）")
+            sys.exit(1)
+        print(f"📱 --send-only 模式：找到 {len(images)} 张当天图片")
+        for img in images:
+            print(f"  {img}")
+        await telegram_send_simple([str(p) for p in images], date=today)
+        print("\n✅ 完成！")
+        return
+
     if use_mock:
         print("⚠ Mock 模式：使用模拟天气数据\n")
     if gender:
@@ -141,6 +165,9 @@ async def main():
         print(f"\n🎨 生成的穿搭图片:")
         for f in image_files:
             print(f"  {f}")
+
+        # 6. 推送到 Telegram
+        await telegram_send_images(image_files, advices, date=today)
 
     print("\n✅ 全部完成！")
 

@@ -31,6 +31,11 @@ cp .env.example .env
 
 编辑 `.env`，填入 `OPENWEATHERMAP_API_KEY`。
 
+（可选）配置 Telegram 推送：填入 `TELEGRAM_BOT_TOKEN` 和 `TELEGRAM_CHAT_ID`，生成图片后会自动发送到你的 Telegram。获取方式：
+
+1. 在 Telegram 中与 [@BotFather](https://t.me/BotFather) 对话，发送 `/newbot` 创建 Bot，获取 Token
+2. 向你的 Bot 发送一条消息，然后访问 `https://api.telegram.org/bot<TOKEN>/getUpdates` 获取 `chat_id`
+
 4. 运行
 
 - 使用真实天气（仅输出 Markdown）：
@@ -55,3 +60,36 @@ python main.py
 
 - Markdown：`output/clothing_guide_YYYY-MM-DD.md`
 - 图片（启用 NotebookLM 时）：`output/*.png`
+
+## GitHub Actions 自动运行
+
+项目已配置 GitHub Actions，每天北京时间 8:00 自动运行全流程并推送到 Telegram。
+
+### 配置 Secrets
+
+在仓库 Settings → Secrets and variables → Actions 中添加以下 Secrets：
+
+| Secret 名称 | 说明 |
+|---|---|
+| `OPENWEATHERMAP_API_KEY` | OpenWeatherMap API Key |
+| `TELEGRAM_BOT_TOKEN` | Telegram Bot Token |
+| `TELEGRAM_CHAT_ID` | 接收消息的 chat_id |
+| `NOTEBOOKLM_STORAGE_STATE` | NotebookLM 认证文件（base64 编码） |
+
+### 导出 NotebookLM 认证
+
+本地登录后，将 `storage_state.json` 编码为 base64 并存入 Secret：
+
+```bash
+# 本地先登录（仅需一次）
+notebooklm login
+
+# 生成 base64 字符串，复制粘贴到 GitHub Secret
+base64 < ~/.notebooklm/storage_state.json
+```
+
+> 注意：NotebookLM 的 cookie 会过期，过期后需重新 `notebooklm login` 并更新 Secret。
+
+### 手动触发
+
+在仓库 Actions 页面选择 "每日穿搭指南生成" → Run workflow 即可手动运行。
