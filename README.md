@@ -2,6 +2,20 @@
 
 天气穿搭指南生成工具：获取天气、生成穿搭建议、输出 Markdown，并可选调用 NotebookLM 生成信息图。
 
+## 效果展示
+
+以下是 2026-02-13 自动生成的穿搭信息图示例：
+
+<p align="center">
+  <img src="examples/北京_2026-02-13.png" width="30%" />
+  <img src="examples/上海_2026-02-13.png" width="30%" />
+  <img src="examples/深圳_2026-02-13.png" width="30%" />
+</p>
+
+<p align="center">
+  <sub>北京 5~13℃ 微凉 &nbsp;|&nbsp; 上海 12~18℃ 舒适 &nbsp;|&nbsp; 深圳 18~23℃ 舒适</sub>
+</p>
+
 ## Python 与兼容性
 
 - 核心流程（天气 + Markdown）兼容 Python 3.9+
