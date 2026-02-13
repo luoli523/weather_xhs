@@ -32,12 +32,16 @@ def load_style_options(config_path: str = "config/style_options.yaml") -> dict:
         return yaml.safe_load(f)
 
 
-def pick_style_values(style_options: dict, category: str) -> dict[str, str]:
-    """根据穿衣等级，从选项列表中随机选取各风格变量的值。
+def pick_style_values(
+    style_options: dict, category: str, gender: str | None = None,
+) -> dict[str, str]:
+    """根据穿衣等级（和可选性别），从选项列表中随机选取各风格变量的值。
 
     支持两种格式：
       - 纯列表：直接随机选一项（与天气无关）
-      - 按穿衣等级分组的字典：先匹配 category，再随机选一项
+      - 按分组的字典：
+        - "人物描述" 按 gender 匹配（女性/男性/中性），未指定则从全部随机
+        - 其余按 category（穿衣等级）匹配
     """
     values = {}
     for key, options in style_options.items():
@@ -45,9 +49,10 @@ def pick_style_values(style_options: dict, category: str) -> dict[str, str]:
             # 纯列表：直接随机
             values[key] = random.choice(options)
         elif isinstance(options, dict):
-            # 按穿衣等级分组：先匹配，再随机
-            if category in options:
-                values[key] = random.choice(options[category])
+            # 人物描述按性别分组，其余按穿衣等级分组
+            match_key = gender if key == "人物描述" else category
+            if match_key and match_key in options:
+                values[key] = random.choice(options[match_key])
             else:
                 # fallback: 从所有分组中随机选
                 all_items = [item for group in options.values() for item in group]
@@ -55,12 +60,15 @@ def pick_style_values(style_options: dict, category: str) -> dict[str, str]:
     return values
 
 
-def build_city_prompt(template: str, advice: ClothingAdvice, style_options: dict) -> str:
+def build_city_prompt(
+    template: str, advice: ClothingAdvice, style_options: dict,
+    gender: str | None = None,
+) -> str:
     """用天气数据 + 随机风格变量填充 prompt 模板"""
     tips_text = "\n".join(f"- {t}" for t in advice.extra_tips) if advice.extra_tips else "无"
 
     # 随机选取风格变量
-    style_values = pick_style_values(style_options, advice.clothing_category)
+    style_values = pick_style_values(style_options, advice.clothing_category, gender=gender)
 
     # 合并天气数据和风格变量
     all_values = {
@@ -119,6 +127,7 @@ async def generate_city_infographics(
     source_id: str,
     advices: list[ClothingAdvice],
     output_dir: str,
+    gender: str | None = None,
 ) -> list[str]:
     """按城市逐张生成 infographic 并下载。返回生成的文件路径列表。"""
     prompt_template = load_infographic_prompt()
@@ -129,7 +138,7 @@ async def generate_city_infographics(
     downloaded_files = []
 
     for i, advice in enumerate(advices):
-        city_prompt = build_city_prompt(prompt_template, advice, style_options)
+        city_prompt = build_city_prompt(prompt_template, advice, style_options, gender=gender)
         print(f"\n  [{i+1}/{len(advices)}] 正在生成 {advice.city_name} 穿搭图...")
 
         # 生成 infographic，仅使用指定的 source
@@ -168,8 +177,13 @@ async def run_notebooklm_pipeline(
     md_file: str,
     advices: list[ClothingAdvice],
     output_dir: str,
+    gender: str | None = None,
 ) -> list[str]:
-    """完整的 NotebookLM pipeline：上传 → 生成 → 下载"""
+    """完整的 NotebookLM pipeline：上传 → 生成 → 下载
+
+    Args:
+        gender: 人物性别（女性/男性/中性），None 表示随机
+    """
     print("\n📓 NotebookLM Pipeline 开始")
 
     async with await NotebookLMClient.from_storage() as client:
@@ -184,7 +198,7 @@ async def run_notebooklm_pipeline(
         # 3. 按城市生成 infographic
         print(f"\n[3/3] 生成 {len(advices)} 张穿搭 infographic...")
         files = await generate_city_infographics(
-            client, notebook_id, source_id, advices, output_dir
+            client, notebook_id, source_id, advices, output_dir, gender=gender
         )
 
         print(f"\n📓 NotebookLM Pipeline 完成，共生成 {len(files)} 张图片")

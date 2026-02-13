@@ -6,10 +6,11 @@
 """
 
 from datetime import datetime
+from typing import Optional
 from .clothing_index import ClothingAdvice
 
 
-def generate_markdown(advices: list[ClothingAdvice], date: str | None = None) -> str:
+def generate_markdown(advices: list[ClothingAdvice], date: Optional[str] = None) -> str:
     """生成适合 NotebookLM infographic 的 Markdown 内容"""
     if not date:
         date = datetime.now().strftime("%Y-%m-%d")

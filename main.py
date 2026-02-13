@@ -5,6 +5,7 @@
 """
 
 import asyncio
+import argparse
 import os
 import sys
 from datetime import datetime
@@ -17,10 +18,22 @@ from src.weather import OpenWeatherClient
 from src.mock_weather import MockWeatherClient
 from src.clothing_index import generate_clothing_advice
 from src.content_generator import generate_markdown, save_markdown
-from src.notebooklm import run_notebooklm_pipeline
 
 
-def load_config(config_path: str = "config/config.yaml") -> dict:
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="天气穿搭指南生成系统")
+    parser.add_argument("--mock", action="store_true", help="使用模拟天气数据")
+    parser.add_argument("--no-nlm", action="store_true", help="跳过 NotebookLM 生成流程")
+    parser.add_argument(
+        "--gender",
+        choices=["female", "male", "neutral", "random"],
+        default="female",
+        help="指定人物性别 (female=女性, male=男性, neutral=中性, random=随机)，默认 female",
+    )
+    return parser.parse_args()
+
+
+def load_config(config_path: str = "config/config.yaml", require_api_key: bool = True) -> dict:
     """加载配置文件，支持环境变量替换"""
     load_dotenv()
     with open(config_path, "r", encoding="utf-8") as f:
@@ -31,10 +44,10 @@ def load_config(config_path: str = "config/config.yaml") -> dict:
     if api_key.startswith("${") and api_key.endswith("}"):
         env_var = api_key[2:-1]
         api_key = os.getenv(env_var)
-        if not api_key:
+        if require_api_key and not api_key:
             print(f"错误：环境变量 {env_var} 未设置。请在 .env 文件中配置。")
             sys.exit(1)
-        config["openweathermap"]["api_key"] = api_key
+        config["openweathermap"]["api_key"] = api_key or ""
 
     return config
 
@@ -65,15 +78,22 @@ async def fetch_all_weather(config: dict, use_mock: bool = False) -> list:
 
 
 async def main():
-    use_mock = "--mock" in sys.argv
-    skip_notebooklm = "--no-nlm" in sys.argv
+    args = parse_args()
+    use_mock = args.mock
+    skip_notebooklm = args.no_nlm
+
+    # 映射 CLI gender 参数到中文 key（与 style_options.yaml 一致）
+    _gender_map = {"female": "女性", "male": "男性", "neutral": "中性"}
+    gender = _gender_map.get(args.gender) if args.gender != "random" else None
 
     print("=== 天气穿搭指南生成系统 ===\n")
     if use_mock:
         print("⚠ Mock 模式：使用模拟天气数据\n")
+    if gender:
+        print(f"👤 人物性别：{gender}\n")
 
     # 1. 加载配置
-    config = load_config()
+    config = load_config(require_api_key=not use_mock)
     cities = config["cities"]
     print(f"📋 已配置 {len(cities)} 个城市: {', '.join(c['name'] for c in cities)}")
 
@@ -105,10 +125,18 @@ async def main():
     if skip_notebooklm:
         print("\n⏭ 跳过 NotebookLM（--no-nlm）")
     else:
+        try:
+            from src.notebooklm import run_notebooklm_pipeline
+        except ImportError as e:
+            print(f"\n❌ NotebookLM 依赖未安装: {e}")
+            print("请先安装依赖：pip install -r requirements.txt")
+            sys.exit(1)
+
         image_files = await run_notebooklm_pipeline(
             md_file=str(output_file),
             advices=advices,
             output_dir=str(output_dir),
+            gender=gender,
         )
         print(f"\n🎨 生成的穿搭图片:")
         for f in image_files:
