@@ -50,6 +50,24 @@ cp .env.example .env
 1. 在 Telegram 中与 [@BotFather](https://t.me/BotFather) 对话，发送 `/newbot` 创建 Bot，获取 Token
 2. 向你的 Bot 发送一条消息，然后访问 `https://api.telegram.org/bot<TOKEN>/getUpdates` 获取 `chat_id`
 
+（可选）配置小红书自动发布：
+
+1. 安装 Playwright 浏览器
+
+```bash
+playwright install chromium
+```
+
+2. 运行登录脚本，在弹出的浏览器中登录小红书
+
+```bash
+python scripts/xhs_login.py
+```
+
+3. 在 `.env` 中设置 `XHS_ENABLED=true`
+
+> 小红书的 cookie 会过期，过期后重新运行登录脚本即可。
+
 4. 运行
 
 - 使用真实天气（仅输出 Markdown）：
@@ -64,10 +82,16 @@ python main.py --no-nlm
 python main.py --mock --no-nlm
 ```
 
-- 完整流程（含 NotebookLM 生成图片）：
+- 完整流程（含 NotebookLM 生成图片 + 推送）：
 
 ```bash
 python main.py
+```
+
+- 跳过小红书发布：
+
+```bash
+python main.py --no-xhs
 ```
 
 ## 输出
@@ -89,6 +113,7 @@ python main.py
 | `TELEGRAM_BOT_TOKEN` | Telegram Bot Token |
 | `TELEGRAM_CHAT_ID` | 接收消息的 chat_id |
 | `NOTEBOOKLM_STORAGE_STATE` | NotebookLM 认证文件（base64 编码） |
+| `XHS_STORAGE_STATE` | 小红书认证文件（base64 编码，可选） |
 
 ### 导出 NotebookLM 认证
 
@@ -103,6 +128,20 @@ base64 < ~/.notebooklm/storage_state.json
 ```
 
 > 注意：NotebookLM 的 cookie 会过期，过期后需重新 `notebooklm login` 并更新 Secret。
+
+### 导出小红书认证（可选）
+
+本地登录后，将 `storage_state.json` 编码为 base64 并存入 Secret：
+
+```bash
+# 本地先登录（仅需一次）
+python scripts/xhs_login.py
+
+# 生成 base64 字符串，复制粘贴到 GitHub Secret
+base64 < ~/.xhs/storage_state.json
+```
+
+> 配置了 `XHS_STORAGE_STATE` Secret 后，GitHub Actions 会自动启用小红书发布。
 
 ### 手动触发
 

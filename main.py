@@ -20,6 +20,7 @@ from src.clothing_index import generate_clothing_advice
 from src.content_generator import generate_markdown, save_markdown
 from src.telegram_notifier import send_images as telegram_send_images
 from src.telegram_notifier import send_images_simple as telegram_send_simple
+from src.xhs_publisher import publish_images as xhs_publish_images
 
 
 def parse_args() -> argparse.Namespace:
@@ -32,6 +33,7 @@ def parse_args() -> argparse.Namespace:
         default="female",
         help="指定人物性别 (female=女性, male=男性, neutral=中性, random=随机)，默认 female",
     )
+    parser.add_argument("--no-xhs", action="store_true", help="跳过小红书发布")
     parser.add_argument(
         "--send-only",
         action="store_true",
@@ -168,6 +170,12 @@ async def main():
 
         # 6. 推送到 Telegram
         await telegram_send_images(image_files, advices, date=today)
+
+        # 7. 发布到小红书
+        if args.no_xhs:
+            print("\n⏭ 跳过小红书（--no-xhs）")
+        else:
+            await xhs_publish_images(image_files, advices, date=today)
 
     print("\n✅ 全部完成！")
 
