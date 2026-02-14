@@ -11,7 +11,27 @@
 import asyncio
 import os
 import random
+import time
 from pathlib import Path
+
+
+# ─── 发布频率控制 ───
+# 两次发布之间至少间隔 60 秒，避免触发小红书反自动化检测
+
+XHS_PUBLISH_INTERVAL = 60  # 秒
+_last_publish_time: float = 0
+
+
+async def _wait_for_rate_limit():
+    """检查距离上次发布是否已过间隔时间，不足则等待。"""
+    global _last_publish_time
+    if _last_publish_time == 0:
+        return
+    elapsed = time.time() - _last_publish_time
+    if elapsed < XHS_PUBLISH_INTERVAL:
+        wait_sec = XHS_PUBLISH_INTERVAL - elapsed
+        print(f"  ⏳ 距上次发布仅 {elapsed:.0f}s，等待 {wait_sec:.0f}s 后继续...")
+        await asyncio.sleep(wait_sec)
 
 
 # ─── 页面选择器（集中管理，方便后续维护） ───
@@ -99,6 +119,8 @@ async def publish_note(
 ) -> bool:
     """通过 Playwright 自动化发布小红书图文笔记。
 
+    自动控制发布频率：两次发布之间至少间隔 60 秒。
+
     页面结构（基于实际截图确认）：
       - 顶部有三个标签页：「上传视频」(默认) | 「上传图文」| 「写长文」
       - 左侧「发布笔记」是下拉菜单按钮（不要点它）
@@ -117,11 +139,16 @@ async def publish_note(
     Returns:
         True 发布成功，False 失败
     """
+    global _last_publish_time
+
     try:
         from playwright.async_api import async_playwright
     except ImportError:
         print("  ❌ 未安装 playwright，请先运行：pip install playwright && playwright install chromium")
         return False
+
+    # 频率控制：等待上次发布冷却
+    await _wait_for_rate_limit()
 
     if len(title) > 20:
         title = title[:20]
@@ -279,6 +306,7 @@ async def publish_note(
             print(f"  发布后 URL: {current_url}")
 
             if "publish/publish" not in current_url:
+                _last_publish_time = time.time()
                 print("  ✅ 笔记发布成功！")
                 return True
 
@@ -286,6 +314,7 @@ async def publish_note(
                 await page.wait_for_selector(
                     SELECTORS["publish_success"], timeout=10000
                 )
+                _last_publish_time = time.time()
                 print("  ✅ 笔记发布成功！")
                 return True
             except Exception:
