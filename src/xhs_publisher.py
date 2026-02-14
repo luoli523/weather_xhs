@@ -11,8 +11,10 @@
 import asyncio
 import os
 import random
-from datetime import datetime
+from datetime import datetime, date
 from pathlib import Path
+
+import yaml
 
 from .clothing_index import ClothingAdvice
 
@@ -71,42 +73,131 @@ def get_xhs_config() -> dict | None:
     return {"storage_state_path": storage_state_path}
 
 
+def _load_special_days(config_path: str = "config/special_days.yaml") -> dict:
+    """加载固定日期节日配置"""
+    try:
+        with open(config_path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return data.get("fixed", {})
+    except FileNotFoundError:
+        return {}
+
+
+def _lunar_special_days(year: int) -> dict[str, dict]:
+    """计算农历节日对应的公历日期（每年不同）。
+
+    返回 {"MM-DD": {"name": ..., "greeting": ...}} 格式，与 fixed 配置统一。
+    """
+    try:
+        from zhdate import ZhDate
+    except ImportError:
+        return {}
+
+    lunar_holidays = [
+        (1, 1, "春节", "新春快乐，万事如意，穿新衣迎新年"),
+        (1, 15, "元宵节", "元宵佳节，团团圆圆，甜甜蜜蜜"),
+        (5, 5, "端午节", "端午安康，记得吃粽子"),
+        (7, 7, "七夕", "七夕快乐，今天的穿搭要浪漫一点"),
+        (8, 15, "中秋节", "中秋快乐，月圆人团圆"),
+        (9, 9, "重阳节", "重阳登高，秋日穿搭正当时"),
+    ]
+
+    result = {}
+    for month, day, name, greeting in lunar_holidays:
+        try:
+            zh = ZhDate(year, month, day)
+            solar = zh.to_datetime()
+            key = solar.strftime("%m-%d")
+            result[key] = {"name": name, "greeting": greeting}
+        except Exception:
+            continue
+
+    # 清明节：固定在公历 4 月 4 日或 5 日，简化为 4-05
+    result["04-05"] = {"name": "清明节", "greeting": "清明时节，春暖花开，轻装出行"}
+
+    return result
+
+
+def get_special_day(date_str: str) -> dict | None:
+    """根据日期判断是否为特殊日子。
+
+    Args:
+        date_str: 日期字符串（YYYY-MM-DD）
+
+    Returns:
+        {"name": "节日名", "greeting": "祝福语"} 或 None
+    """
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+    except ValueError:
+        return None
+
+    mm_dd = dt.strftime("%m-%d")
+
+    # 1. 查固定日期节日
+    fixed = _load_special_days()
+    if mm_dd in fixed:
+        return fixed[mm_dd]
+
+    # 2. 查农历节日
+    lunar = _lunar_special_days(dt.year)
+    if mm_dd in lunar:
+        return lunar[mm_dd]
+
+    return None
+
+
 def build_xhs_content(
     advices: list[ClothingAdvice],
-    date: str,
+    date_str: str,
 ) -> tuple[str, str, list[str]]:
     """根据穿搭建议生成小红书笔记的标题、正文和标签。
 
     Args:
         advices: 各城市穿搭建议列表
-        date: 日期字符串（如 2026-02-12）
+        date_str: 日期字符串（如 2026-02-12）
 
     Returns:
         (title, content, tags) 三元组
     """
-    # 解析日期显示格式
+    # 解析日期
     try:
-        dt = datetime.strptime(date, "%Y-%m-%d")
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
         date_display = f"{dt.month}/{dt.day}"
     except ValueError:
-        date_display = date
+        dt = None
+        date_display = date_str
 
     city_names = [a.city_name for a in advices]
     city_str = "·".join(city_names)
 
-    # ── 标题 ──
-    title = f"今日穿搭指南 | {city_str} {date_display}"
+    # 检查是否为特殊日子
+    special = get_special_day(date_str)
+
+    # ── 标题（20字限制）──
+    if special:
+        title = f"{special['name']}穿搭 {city_str} 天气指南"
+    else:
+        title = f"{date_display}穿搭 {city_str} 天气指南"
+    if len(title) > 20:
+        title = title[:20]
 
     # ── 正文 ──
     lines = []
+
+    # 特殊日子祝福语开头
+    if special:
+        lines.append(f"{special['name']}快乐！{special['greeting']}")
+        lines.append("")
+
     for advice in advices:
-        lines.append(f"📍 {advice.city_name}")
-        lines.append(f"🌡 {advice.temp_range}（体感 {advice.feels_like}）")
-        lines.append(f"🌤 {advice.weather_desc}")
-        lines.append(f"👔 {advice.clothing_category}：{advice.outfit_suggestion}")
+        # 城市行：城市 | 天气 温度
+        lines.append(f"📍 {advice.city_name} | {advice.weather_desc} {advice.temp_range}")
+        lines.append(f"穿衣指数：{advice.clothing_category}")
+        lines.append(f"👔 {advice.outfit_suggestion}")
         if advice.extra_tips:
             lines.append("💡 " + "；".join(advice.extra_tips[:2]))
-        lines.append("")  # 空行分隔城市
+        lines.append("")
 
     content = "\n".join(lines).rstrip()
 
@@ -114,6 +205,13 @@ def build_xhs_content(
     tags = ["穿搭", "天气穿搭", "每日穿搭", "今日穿搭"]
     for name in city_names:
         tags.append(f"{name}穿搭")
+    # 天气相关标签
+    categories = list({a.clothing_category for a in advices})
+    for cat in categories:
+        tags.append(cat)
+    # 节日标签
+    if special:
+        tags.append(special["name"])
 
     return title, content, tags
 
@@ -401,7 +499,7 @@ async def publish_images(
 
     print(f"\n📕 正在发布 {len(image_files)} 张图片到小红书...")
 
-    title, content, tags = build_xhs_content(advices, date)
+    title, content, tags = build_xhs_content(advices, date_str=date)
     print(f"  标题: {title}")
     print(f"  标签: {', '.join(f'#{t}' for t in tags)}")
 
@@ -421,10 +519,10 @@ async def publish_images(
     return success
 
 
-async def publish_images_simple(image_files: list[str], date: str) -> bool:
+async def publish_images_simple(image_files: list[str], date_str: str) -> bool:
     """轻量发布：仅根据文件名构建内容，无需 advices 对象。
 
-    适用于 --send-only 模式，直接发布已有图片。
+    适用于 --send-xhs 模式，直接发布已有图片。
     """
     config = get_xhs_config()
     if not config:
@@ -439,18 +537,36 @@ async def publish_images_simple(image_files: list[str], date: str) -> bool:
         city_names.append(city)
 
     try:
-        dt = datetime.strptime(date, "%Y-%m-%d")
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
         date_display = f"{dt.month}/{dt.day}"
     except ValueError:
-        date_display = date
+        date_display = date_str
 
     city_str = "·".join(city_names)
-    title = f"今日穿搭指南 | {city_str} {date_display}"
+    special = get_special_day(date_str)
+
+    # 标题
+    if special:
+        title = f"{special['name']}穿搭 {city_str} 天气指南"
+    else:
+        title = f"{date_display}穿搭 {city_str} 天气指南"
     if len(title) > 20:
         title = title[:20]
 
-    content = f"今日穿搭指南 {date}\n" + "\n".join(f"📍 {c}" for c in city_names)
+    # 正文
+    lines = []
+    if special:
+        lines.append(f"{special['name']}快乐！{special['greeting']}")
+        lines.append("")
+    lines.append(f"今日穿搭指南 {date_str}")
+    for c in city_names:
+        lines.append(f"📍 {c}")
+    content = "\n".join(lines)
+
+    # 标签
     tags = ["穿搭", "天气穿搭", "每日穿搭", "今日穿搭"]
+    if special:
+        tags.append(special["name"])
 
     print(f"\n📕 正在发布 {len(image_files)} 张图片到小红书...")
     print(f"  标题: {title}")
