@@ -20,18 +20,23 @@ from .clothing_index import ClothingAdvice
 # ─── 页面选择器（集中管理，方便后续维护） ───
 
 SELECTORS = {
-    # 创作中心页面
-    "file_input": 'input[type="file"]',
-    "upload_area": ".upload-wrapper",
-    "image_preview": ".c-image",
+    # 发布笔记标签页（默认可能是视频上传，需要先切到图文）
+    "publish_note_tab": 'div.creator-tab:has-text("发布笔记"), span:has-text("发布笔记"), a:has-text("发布笔记")',
+    # 图片上传 file input（隐藏元素，需用 state="attached"）
+    # 图片 input 的 accept 包含 image 格式，与视频 input 区分
+    "image_file_input": 'input[type="file"][accept*=".jpg"], input[type="file"][accept*=".png"], input[type="file"][accept*="image"]',
+    # 通用 file input 备选（当图片专用选择器找不到时）
+    "file_input_any": 'input[type="file"]',
+    "upload_area": ".upload-wrapper, .upload-input",
+    "image_preview": ".c-image, .img-container, img[src*='upload'], img[src*='spectrum'], .publish-image",
     # 标题输入
     "title_input": '#title-input input, input[placeholder*="标题"], .c-input_inner input',
     # 正文编辑器
-    "content_editor": '#post-textarea .ql-editor, div[contenteditable="true"].ql-editor',
+    "content_editor": '#post-textarea .ql-editor, div[contenteditable="true"].ql-editor, div[contenteditable="true"]',
     # 发布按钮
-    "publish_button": 'button.publishBtn, button.css-k01y1m',
-    # 发布成功标识（创作中心 URL 变化或出现成功提示）
-    "publish_success": 'text=发布成功, .success-hint',
+    "publish_button": 'button.publishBtn, button.css-k01y1m, button:has-text("发布")',
+    # 发布成功标识
+    "publish_success": 'text=发布成功, .success-hint, text=已发布',
     # 登录检测
     "login_avatar": ".user-avatar, .user-info, .creator-avatar",
 }
@@ -161,9 +166,9 @@ async def publish_note(
 
         try:
             # ── 1. 打开创作中心发布页 ──
-            print("  [1/5] 打开创作中心...")
+            print("  [1/6] 打开创作中心...")
             await page.goto(CREATOR_PUBLISH_URL, wait_until="networkidle", timeout=30000)
-            await _human_delay(1, 2)
+            await _human_delay(2, 3)
 
             # 检测是否需要登录（跳转到了登录页面）
             current_url = page.url
@@ -172,18 +177,89 @@ async def publish_note(
                 await page.screenshot(path="output/xhs_error_login.png")
                 return False
 
-            # ── 2. 上传图片 ──
-            print(f"  [2/5] 上传 {len(image_files)} 张图片...")
-            file_input = await page.wait_for_selector(
-                SELECTORS["file_input"], timeout=15000
-            )
-            # 转为绝对路径
+            # 保存页面截图供调试
+            await page.screenshot(path="output/xhs_debug_page_loaded.png")
+            print(f"  当前 URL: {page.url}")
+
+            # ── 2. 切换到「发布笔记」标签页 ──
+            # 创作中心默认可能在视频上传页，需要切换到图文笔记
+            print("  [2/6] 切换到发布笔记...")
+            switched = False
+            for tab_selector in [
+                'div:has-text("发布笔记")',
+                'span:has-text("发布笔记")',
+                'a:has-text("发布笔记")',
+                'li:has-text("发布笔记")',
+            ]:
+                try:
+                    tab = await page.wait_for_selector(tab_selector, timeout=3000)
+                    await tab.click()
+                    switched = True
+                    print("  ✅ 已切换到发布笔记")
+                    await _human_delay(1, 2)
+                    break
+                except Exception:
+                    continue
+
+            if not switched:
+                # 可能已经在笔记发布页，继续
+                print("  ⚠ 未找到发布笔记标签，尝试继续（可能已在笔记页）")
+
+            await page.screenshot(path="output/xhs_debug_after_tab.png")
+
+            # ── 3. 上传图片 ──
+            print(f"  [3/6] 上传 {len(image_files)} 张图片...")
             abs_paths = [str(Path(f).resolve()) for f in image_files]
+
+            # 查找图片专用的 file input（accept 包含图片格式）
+            # file input 通常是隐藏的，使用 state="attached" 而非等待可见
+            file_input = None
+
+            # 策略 1：查找接受图片格式的 input
+            try:
+                file_input = await page.wait_for_selector(
+                    SELECTORS["image_file_input"], state="attached", timeout=5000
+                )
+                print("  找到图片上传 input")
+            except Exception:
+                pass
+
+            # 策略 2：查找所有 file input，排除纯视频的
+            if not file_input:
+                try:
+                    all_inputs = await page.query_selector_all('input[type="file"]')
+                    for inp in all_inputs:
+                        accept = await inp.get_attribute("accept") or ""
+                        # 跳过纯视频 input
+                        if accept and all(
+                            ext in accept
+                            for ext in [".mp4", ".mov"]
+                        ) and ".jpg" not in accept and ".png" not in accept:
+                            continue
+                        file_input = inp
+                        accept_display = accept[:60] if accept else "(无限制)"
+                        print(f"  找到 file input (accept={accept_display})")
+                        break
+                except Exception:
+                    pass
+
+            # 策略 3：最后兜底 — 取第一个 file input
+            if not file_input:
+                try:
+                    file_input = await page.wait_for_selector(
+                        SELECTORS["file_input_any"], state="attached", timeout=5000
+                    )
+                    accept = await file_input.get_attribute("accept") or "(无限制)"
+                    print(f"  兜底: 使用第一个 file input (accept={accept[:60]})")
+                except Exception:
+                    print("  ❌ 找不到任何文件上传 input")
+                    await page.screenshot(path="output/xhs_error_no_input.png")
+                    return False
+
             await file_input.set_input_files(abs_paths)
 
             # 等待图片上传和处理完成
-            await _human_delay(2, 4)
-            # 等待图片预览出现
+            await _human_delay(3, 5)
             try:
                 await page.wait_for_selector(
                     SELECTORS["image_preview"], timeout=30000
@@ -192,86 +268,101 @@ async def publish_note(
             except Exception:
                 print("  ⚠ 图片预览检测超时，继续尝试...")
 
+            await page.screenshot(path="output/xhs_debug_after_upload.png")
             await _human_delay(1, 2)
 
-            # ── 3. 填写标题 ──
-            print(f"  [3/5] 填写标题: {title}")
-            try:
-                title_input = await page.wait_for_selector(
-                    SELECTORS["title_input"], timeout=10000
-                )
-                await title_input.click()
-                await _human_delay(0.3, 0.6)
-                await title_input.fill(title)
-            except Exception:
-                print("  ⚠ 标题输入框未找到，尝试备选方式...")
-                # 备选：通过 placeholder 文本查找
+            # ── 4. 填写标题 ──
+            print(f"  [4/6] 填写标题: {title}")
+            title_filled = False
+            for title_selector in [
+                SELECTORS["title_input"],
+                'input[placeholder*="填写标题"]',
+                'input[placeholder*="标题"]',
+                '#title-input',
+            ]:
                 try:
-                    title_alt = await page.wait_for_selector(
-                        'input[placeholder*="填写标题"]', timeout=5000
+                    title_input = await page.wait_for_selector(
+                        title_selector, timeout=3000
                     )
-                    await title_alt.fill(title)
+                    await title_input.click()
+                    await _human_delay(0.3, 0.6)
+                    await title_input.fill(title)
+                    title_filled = True
+                    break
                 except Exception:
-                    print("  ⚠ 无法找到标题输入框，跳过标题")
+                    continue
+
+            if not title_filled:
+                print("  ⚠ 无法找到标题输入框，跳过标题")
 
             await _human_delay(0.5, 1)
 
-            # ── 4. 填写正文和标签 ──
-            print("  [4/5] 填写正文...")
-            try:
-                editor = await page.wait_for_selector(
-                    SELECTORS["content_editor"], timeout=10000
-                )
-                await editor.click()
-                await _human_delay(0.3, 0.6)
+            # ── 5. 填写正文和标签 ──
+            print("  [5/6] 填写正文...")
+            tag_text = " ".join(f"#{t}" for t in tags)
+            full_content = f"{content}\n\n{tag_text}"
+            content_filled = False
 
-                # 拼接正文 + 标签
-                tag_text = " ".join(f"#{t}" for t in tags)
-                full_content = f"{content}\n\n{tag_text}"
-                await editor.fill(full_content)
-            except Exception:
-                print("  ⚠ 正文编辑器未找到，尝试备选方式...")
+            for editor_selector in [
+                SELECTORS["content_editor"],
+                'div[contenteditable="true"]',
+                '.ql-editor',
+            ]:
                 try:
-                    editor_alt = await page.wait_for_selector(
-                        'div[contenteditable="true"]', timeout=5000
+                    editor = await page.wait_for_selector(
+                        editor_selector, timeout=3000
                     )
-                    await editor_alt.click()
-                    tag_text = " ".join(f"#{t}" for t in tags)
-                    full_content = f"{content}\n\n{tag_text}"
-                    await editor_alt.fill(full_content)
+                    await editor.click()
+                    await _human_delay(0.3, 0.6)
+                    await editor.fill(full_content)
+                    content_filled = True
+                    break
                 except Exception:
-                    print("  ❌ 无法找到正文编辑器")
-                    await page.screenshot(path="output/xhs_error_editor.png")
-                    return False
+                    continue
+
+            if not content_filled:
+                print("  ❌ 无法找到正文编辑器")
+                await page.screenshot(path="output/xhs_error_editor.png")
+                return False
 
             await _human_delay(1, 2)
 
-            # ── 5. 点击发布 ──
-            print("  [5/5] 点击发布...")
-            try:
-                publish_btn = await page.wait_for_selector(
-                    SELECTORS["publish_button"], timeout=10000
-                )
-                await _human_delay(0.5, 1)
-                await publish_btn.click()
-            except Exception:
-                # 尝试通过文本查找
+            # ── 6. 点击发布 ──
+            print("  [6/6] 点击发布...")
+            await page.screenshot(path="output/xhs_debug_before_publish.png")
+
+            publish_clicked = False
+            for btn_selector in [
+                SELECTORS["publish_button"],
+                'button:has-text("发布")',
+                'div.btn:has-text("发布")',
+            ]:
                 try:
-                    publish_btn_alt = await page.wait_for_selector(
-                        'button:has-text("发布")', timeout=5000
+                    publish_btn = await page.wait_for_selector(
+                        btn_selector, timeout=3000
                     )
-                    await publish_btn_alt.click()
+                    await _human_delay(0.5, 1)
+                    await publish_btn.click()
+                    publish_clicked = True
+                    break
                 except Exception:
-                    print("  ❌ 找不到发布按钮")
-                    await page.screenshot(path="output/xhs_error_publish_btn.png")
-                    return False
+                    continue
+
+            if not publish_clicked:
+                print("  ❌ 找不到发布按钮")
+                await page.screenshot(path="output/xhs_error_publish_btn.png")
+                return False
 
             # 等待发布结果
             await _human_delay(3, 5)
 
-            # 检查是否发布成功（URL 变化或出现提示）
+            # 检查是否发布成功
             current_url = page.url
-            if "publish" not in current_url.lower() or "success" in current_url.lower():
+            await page.screenshot(path="output/xhs_debug_after_publish.png")
+            print(f"  发布后 URL: {current_url}")
+
+            # URL 离开了发布页面通常说明发布成功
+            if "publish/publish" not in current_url:
                 print("  ✅ 笔记发布成功！")
                 return True
 
@@ -283,8 +374,7 @@ async def publish_note(
                 print("  ✅ 笔记发布成功！")
                 return True
             except Exception:
-                print("  ⚠ 发布状态未知，请手动确认")
-                await page.screenshot(path="output/xhs_error_publish_result.png")
+                print("  ⚠ 发布状态未知，请手动确认（截图已保存到 output/xhs_debug_after_publish.png）")
                 return False
 
         except Exception as e:
