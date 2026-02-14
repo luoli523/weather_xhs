@@ -160,8 +160,12 @@ async def publish_note(
 ) -> bool:
     """通过 Playwright 自动化发布小红书图文笔记。
 
-    流程参考小红书创作者平台实际页面结构：
-      打开发布页 → 点击「发布笔记」→ 点击「上传图文」
+    页面结构（基于实际截图确认）：
+      - 顶部有三个标签页：「上传视频」(默认) | 「上传图文」| 「写长文」
+      - 左侧「发布笔记」是下拉菜单按钮（不要点它）
+      - 需要直接点击顶部「上传图文」标签切换到图文模式
+
+    流程：打开发布页 → 点击顶部「上传图文」标签
       → 逐张上传图片 → 填标题 → 填正文+标签 → 点击发布
 
     Args:
@@ -192,7 +196,7 @@ async def publish_note(
 
         try:
             # ── 1. 打开创作中心发布页 ──
-            print("  [1/7] 打开创作中心...")
+            print("  [1/6] 打开创作中心...")
             await page.goto(CREATOR_PUBLISH_URL, wait_until="networkidle", timeout=30000)
             await _human_delay(2, 3)
 
@@ -206,30 +210,37 @@ async def publish_note(
             await page.screenshot(path="output/xhs_debug_1_page_loaded.png")
             print(f"  当前 URL: {page.url}")
 
-            # ── 2. 点击「发布笔记」 ──
-            # 创作中心默认在视频上传页，需要先切到笔记模式
-            print("  [2/7] 点击「发布笔记」...")
-            if await _click_by_text(page, "发布笔记"):
-                print("  ✅ 已点击「发布笔记」")
-                await _human_delay(1, 2)
-            else:
-                print("  ⚠ 未找到「发布笔记」按钮，可能已在笔记页面")
+            # ── 2. 点击顶部「上传图文」标签 ──
+            # 页面顶部有三个标签：上传视频(默认) | 上传图文 | 写长文
+            # 注意：不要点左侧的「发布笔记」按钮（那是下拉菜单）
+            print("  [2/6] 切换到「上传图文」标签...")
+            switched = False
+            # 使用 Playwright locator API 精确匹配标签文本
+            try:
+                tab = page.get_by_text("上传图文", exact=True)
+                # 可能有多个匹配（标签 + 下拉菜单项），点击第一个（顶部标签）
+                await tab.first.click()
+                switched = True
+                print("  ✅ 已切换到上传图文")
+            except Exception:
+                pass
 
-            await page.screenshot(path="output/xhs_debug_2_after_note_tab.png")
+            if not switched:
+                # 备选：通过 XPath 查找
+                if await _click_by_text(page, "上传图文"):
+                    switched = True
+                    print("  ✅ 已切换到上传图文（备选方式）")
 
-            # ── 3. 点击「上传图文」 ──
-            # 笔记页面可能还需要选择图文模式
-            print("  [3/7] 点击「上传图文」...")
-            if await _click_by_text(page, "上传图文"):
-                print("  ✅ 已点击「上传图文」")
-                await _human_delay(1, 2)
-            else:
-                print("  ⚠ 未找到「上传图文」按钮，继续尝试上传")
+            if not switched:
+                print("  ❌ 无法切换到上传图文标签")
+                await page.screenshot(path="output/xhs_error_no_tab.png")
+                return False
 
-            await page.screenshot(path="output/xhs_debug_3_after_upload_tab.png")
+            await _human_delay(1, 2)
+            await page.screenshot(path="output/xhs_debug_2_after_tab.png")
 
-            # ── 4. 逐张上传图片 ──
-            print(f"  [4/7] 上传 {len(image_files)} 张图片...")
+            # ── 3. 逐张上传图片 ──
+            print(f"  [3/6] 上传 {len(image_files)} 张图片...")
             abs_paths = [str(Path(f).resolve()) for f in image_files]
 
             for i, img_path in enumerate(abs_paths):
@@ -239,10 +250,10 @@ async def publish_note(
                 )
                 await file_input.set_input_files(img_path)
                 print(f"    [{i+1}/{len(abs_paths)}] 已提交: {Path(img_path).name}")
-                await _human_delay(2, 3)
+                await _human_delay(2, 4)
 
             # 等待所有图片处理完成
-            await _human_delay(2, 4)
+            await _human_delay(3, 5)
             try:
                 await page.wait_for_selector(
                     SELECTORS["image_preview"], timeout=30000
@@ -251,11 +262,11 @@ async def publish_note(
             except Exception:
                 print("  ⚠ 图片预览检测超时，继续尝试...")
 
-            await page.screenshot(path="output/xhs_debug_4_after_upload.png")
+            await page.screenshot(path="output/xhs_debug_3_after_upload.png")
             await _human_delay(1, 2)
 
-            # ── 5. 填写标题 ──
-            print(f"  [5/7] 填写标题: {title}")
+            # ── 4. 填写标题 ──
+            print(f"  [4/6] 填写标题: {title}")
             title_filled = False
             for sel in [SELECTORS["title_input"], SELECTORS["title_input_alt"]]:
                 try:
@@ -273,8 +284,8 @@ async def publish_note(
 
             await _human_delay(0.5, 1)
 
-            # ── 6. 填写正文 + 话题标签 ──
-            print("  [6/7] 填写正文...")
+            # ── 5. 填写正文 + 话题标签 ──
+            print("  [5/6] 填写正文...")
             content_filled = False
             for sel in [SELECTORS["content_editor"], SELECTORS["content_editor_alt"]]:
                 try:
@@ -316,11 +327,11 @@ async def publish_note(
                 await page.screenshot(path="output/xhs_error_editor.png")
                 return False
 
-            await page.screenshot(path="output/xhs_debug_6_before_publish.png")
+            await page.screenshot(path="output/xhs_debug_5_before_publish.png")
             await _human_delay(1, 2)
 
-            # ── 7. 点击发布 ──
-            print("  [7/7] 点击发布...")
+            # ── 6. 点击发布 ──
+            print("  [6/6] 点击发布...")
             publish_clicked = False
             for sel in [SELECTORS["publish_button"], SELECTORS["publish_button_alt"]]:
                 try:
@@ -340,7 +351,7 @@ async def publish_note(
             # 等待发布结果
             await _human_delay(3, 5)
             current_url = page.url
-            await page.screenshot(path="output/xhs_debug_7_after_publish.png")
+            await page.screenshot(path="output/xhs_debug_6_after_publish.png")
             print(f"  发布后 URL: {current_url}")
 
             # URL 离开了 publish/publish 通常说明发布成功
@@ -356,7 +367,7 @@ async def publish_note(
                 print("  ✅ 笔记发布成功！")
                 return True
             except Exception:
-                print("  ⚠ 发布状态未知，请检查截图 output/xhs_debug_7_after_publish.png")
+                print("  ⚠ 发布状态未知，请检查截图 output/xhs_debug_6_after_publish.png")
                 return False
 
         except Exception as e:
