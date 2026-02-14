@@ -37,7 +37,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--send-only",
         action="store_true",
-        help="跳过生成流程，仅发送当天已有图片到 Telegram",
+        help="跳过生成流程，仅发送当天已有图片到 Telegram 和小红书",
     )
     return parser.parse_args()
 
@@ -109,7 +109,12 @@ async def main():
         print(f"📱 --send-only 模式：找到 {len(images)} 张当天图片")
         for img in images:
             print(f"  {img}")
-        await telegram_send_simple([str(p) for p in images], date=today)
+        image_paths = [str(p) for p in images]
+        await telegram_send_simple(image_paths, date=today)
+        if not args.no_xhs:
+            # 构造简易 advices 用于小红书内容生成
+            from src.xhs_publisher import publish_images_simple as xhs_publish_simple
+            await xhs_publish_simple(image_paths, date=today)
         print("\n✅ 完成！")
         return
 

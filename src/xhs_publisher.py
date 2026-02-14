@@ -429,3 +429,53 @@ async def publish_images(
         print("📕 小红书发布失败，请检查错误截图（output/xhs_error_*.png）")
 
     return success
+
+
+async def publish_images_simple(image_files: list[str], date: str) -> bool:
+    """轻量发布：仅根据文件名构建内容，无需 advices 对象。
+
+    适用于 --send-only 模式，直接发布已有图片。
+    """
+    config = get_xhs_config()
+    if not config:
+        print("\n⏭ 未配置小红书（跳过发布）")
+        return False
+
+    # 从文件名提取城市名（如 "北京_2026-02-13.png" → "北京"）
+    city_names = []
+    for img_path in image_files:
+        stem = Path(img_path).stem
+        city = stem.split("_")[0] if "_" in stem else stem
+        city_names.append(city)
+
+    try:
+        dt = datetime.strptime(date, "%Y-%m-%d")
+        date_display = f"{dt.month}/{dt.day}"
+    except ValueError:
+        date_display = date
+
+    city_str = "·".join(city_names)
+    title = f"今日穿搭指南 | {city_str} {date_display}"
+    if len(title) > 20:
+        title = title[:20]
+
+    content = f"今日穿搭指南 {date}\n" + "\n".join(f"📍 {c}" for c in city_names)
+    tags = ["穿搭", "天气穿搭", "每日穿搭", "今日穿搭"]
+
+    print(f"\n📕 正在发布 {len(image_files)} 张图片到小红书...")
+    print(f"  标题: {title}")
+
+    success = await publish_note(
+        image_files=image_files,
+        title=title,
+        content=content,
+        tags=tags,
+        storage_state_path=config["storage_state_path"],
+    )
+
+    if success:
+        print("📕 小红书发布完成")
+    else:
+        print("📕 小红书发布失败，请检查错误截图（output/xhs_error_*.png）")
+
+    return success
