@@ -213,29 +213,26 @@ async def publish_note(
             # ── 2. 点击顶部「上传图文」标签 ──
             # 页面顶部有三个标签：上传视频(默认) | 上传图文 | 写长文
             # 注意：不要点左侧的「发布笔记」按钮（那是下拉菜单）
+            # 注意：标签元素可能在视口之外，Playwright 常规 click 会超时，
+            #       因此使用 JavaScript evaluate 直接点击（绕过视口检查）。
             print("  [2/6] 切换到「上传图文」标签...")
-            switched = False
-            # 使用 Playwright locator API 精确匹配标签文本
-            try:
-                tab = page.get_by_text("上传图文", exact=True)
-                # 可能有多个匹配（标签 + 下拉菜单项），点击第一个（顶部标签）
-                await tab.first.click()
-                switched = True
-                print("  ✅ 已切换到上传图文")
-            except Exception:
-                pass
-
-            if not switched:
-                # 备选：通过 XPath 查找
-                if await _click_by_text(page, "上传图文"):
-                    switched = True
-                    print("  ✅ 已切换到上传图文（备选方式）")
+            switched = await page.evaluate("""() => {
+                const elements = document.querySelectorAll('*');
+                for (const el of elements) {
+                    if (el.textContent.trim() === '上传图文' && el.children.length === 0) {
+                        el.click();
+                        return true;
+                    }
+                }
+                return false;
+            }""")
 
             if not switched:
                 print("  ❌ 无法切换到上传图文标签")
                 await page.screenshot(path="output/xhs_error_no_tab.png")
                 return False
 
+            print("  ✅ 已切换到上传图文")
             await _human_delay(1, 2)
             await page.screenshot(path="output/xhs_debug_2_after_tab.png")
 
