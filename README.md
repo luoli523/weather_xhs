@@ -1,6 +1,8 @@
 # weather_xhs
 
-天气穿搭指南生成工具：获取天气、生成穿搭建议、输出 Markdown，并可选调用 NotebookLM 生成信息图。
+每日天气穿搭指南 + 二十四节气信息图自动生成系统。
+
+获取天气 → 生成穿搭建议 → NotebookLM 生成信息图 → 推送 Telegram → 发布小红书。节气日额外生成节气文化信息图。
 
 ## 效果展示
 
@@ -16,28 +18,92 @@
   <sub>北京 5~13℃ 微凉 &nbsp;|&nbsp; 上海 12~18℃ 舒适 &nbsp;|&nbsp; 深圳 18~23℃ 舒适</sub>
 </p>
 
-## Python 与兼容性
+## 功能概览
 
-- 核心流程（天气 + Markdown）兼容 Python 3.9+
-- NotebookLM 流程依赖 `notebooklm-py`（按其发布版本要求安装，建议使用 Python 3.10+）
+### 穿搭流程（每日运行）
 
-## 使用 venv 运行
+1. 调用 OpenWeatherMap API 获取各城市实时天气 + 当日预报
+2. 根据温度生成 7 档穿衣指数和穿搭建议（极热/炎热/温暖/舒适/微凉/寒冷/极寒）
+3. 输出结构化 Markdown，上传到 NotebookLM 生成穿搭 infographic
+4. 推送穿搭图到 Telegram（每城市一张，附天气穿搭 caption）
+5. 发布穿搭多图笔记到小红书（含节日祝福、天气穿衣指数）
 
-1. 创建并激活虚拟环境
+### 节气流程（节气日自动触发）
+
+1. 使用 `sxtwl`（寿星天文历）检测当天是否为二十四节气
+2. 从 `config/solar_terms.yaml` 加载节气含义、传统习俗、美食、养生提示
+3. 生成节气 Markdown，上传到 NotebookLM 生成中国风节气 infographic
+4. 推送节气图到 Telegram（附节气介绍文案）
+5. 发布独立节气笔记到小红书（附习俗、美食、养生内容）
+
+## 项目结构
+
+```
+weather_xhs/
+├── main.py                         # 主入口
+├── config/
+│   ├── config.yaml                 # 城市列表 + API 配置
+│   ├── prompts.yaml                # NotebookLM prompt 模板（穿搭 + 节气）
+│   ├── style_options.yaml          # 穿搭图风格变量（配色/人物/氛围）
+│   ├── special_days.yaml           # 节日祝福配置（固定日期）
+│   └── solar_terms.yaml            # 二十四节气信息（含义/习俗/美食/养生）
+├── src/
+│   ├── common/                     # 共享基础功能
+│   │   ├── notebooklm.py           #   NotebookLM 基础（find notebook, upload source）
+│   │   ├── telegram.py             #   Telegram 基础（get_config, send_photo）
+│   │   └── xhs.py                  #   小红书基础（get_config, publish_note）
+│   ├── clothing/                   # 穿搭模块
+│   │   ├── weather.py              #   OpenWeatherMap API 客户端
+│   │   ├── mock_weather.py         #   模拟天气数据（测试用）
+│   │   ├── index.py                #   穿衣指数生成
+│   │   ├── content.py              #   Markdown 内容生成
+│   │   ├── notebooklm.py           #   穿搭 NotebookLM pipeline
+│   │   ├── telegram.py             #   穿搭 Telegram 推送
+│   │   └── xhs.py                  #   穿搭小红书发布（含节日祝福）
+│   └── solar_term/                 # 节气模块
+│       ├── detector.py             #   节气检测（sxtwl）
+│       ├── content.py              #   节气内容生成（MD/Prompt/XHS/Telegram）
+│       └── notebooklm.py           #   节气 NotebookLM pipeline
+├── scripts/
+│   └── xhs_login.py                # 小红书登录辅助脚本
+├── output/                         # 生成产物目录
+└── .github/workflows/
+    └── daily-run.yml               # 每日定时运行
+```
+
+## 输出产物
+
+每次运行后 `output/` 目录内容（以 3 个城市 + 雨水节气日为例）：
+
+| 文件 | 说明 |
+|------|------|
+| `clothing_guide_2026-02-18.md` | 穿搭 Markdown（NotebookLM source） |
+| `北京_2026-02-18.png` | 北京穿搭 infographic |
+| `上海_2026-02-18.png` | 上海穿搭 infographic |
+| `深圳_2026-02-18.png` | 深圳穿搭 infographic |
+| `solar_term_雨水_2026-02-18.md` | 节气 Markdown（仅节气日） |
+| `雨水_2026-02-18.png` | 节气 infographic（仅节气日） |
+
+推送结果：
+
+| 渠道 | 内容 |
+|------|------|
+| **Telegram** | 3 张穿搭图（各附天气穿搭 caption）+ 1 张节气图（附节气介绍） |
+| **小红书** | 1 条穿搭多图笔记 + 1 条节气笔记（独立发布） |
+
+> 非节气日只有穿搭内容，节气相关的文件和推送不会产生。
+
+## 快速开始
+
+### 1. 环境准备
 
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-```
-
-2. 安装依赖
-
-```bash
 pip install -r requirements.txt
 ```
 
-3. 配置环境变量
+### 2. 配置环境变量
 
 ```bash
 cp .env.example .env
@@ -45,20 +111,62 @@ cp .env.example .env
 
 编辑 `.env`，填入 `OPENWEATHERMAP_API_KEY`。
 
-（可选）配置 Telegram 推送：填入 `TELEGRAM_BOT_TOKEN` 和 `TELEGRAM_CHAT_ID`，生成图片后会自动发送到你的 Telegram。获取方式：
+### 3. 运行
+
+```bash
+# Mock 模式测试（无需 API Key，仅生成 Markdown）
+python main.py --mock --no-nlm
+
+# 完整流程（天气 + NotebookLM 生成图 + Telegram + 小红书）
+python main.py
+
+# 跳过 NotebookLM（仅生成 Markdown）
+python main.py --no-nlm
+
+# 跳过小红书发布
+python main.py --no-xhs
+
+# 仅发送当天已有图片到 Telegram
+python main.py --send-telegram
+
+# 仅发送当天已有图片到小红书
+python main.py --send-xhs
+```
+
+### 命令行参数
+
+| 参数 | 说明 |
+|------|------|
+| `--mock` | 使用模拟天气数据，不调用 API |
+| `--no-nlm` | 跳过 NotebookLM 生成流程 |
+| `--no-xhs` | 跳过所有小红书发布（穿搭和节气） |
+| `--gender female/male/neutral/random` | 穿搭图中人物性别（默认 female） |
+| `--send-telegram` | 跳过生成，仅发送当天图片到 Telegram |
+| `--send-xhs` | 跳过生成，仅发送当天图片到小红书 |
+
+## 可选功能配置
+
+### Telegram 推送
 
 1. 在 Telegram 中与 [@BotFather](https://t.me/BotFather) 对话，发送 `/newbot` 创建 Bot，获取 Token
 2. 向你的 Bot 发送一条消息，然后访问 `https://api.telegram.org/bot<TOKEN>/getUpdates` 获取 `chat_id`
+3. 在 `.env` 中设置：
 
-（可选）配置小红书自动发布：
+```
+TELEGRAM_ENABLED=true
+TELEGRAM_BOT_TOKEN=你的token
+TELEGRAM_CHAT_ID=你的chat_id
+```
 
-1. 安装 Playwright 浏览器
+### 小红书自动发布
+
+1. 安装 Playwright 浏览器：
 
 ```bash
 playwright install chromium
 ```
 
-2. 运行登录脚本，在弹出的浏览器中登录小红书
+2. 运行登录脚本，在弹出的浏览器中登录小红书：
 
 ```bash
 python scripts/xhs_login.py
@@ -68,44 +176,13 @@ python scripts/xhs_login.py
 
 > 小红书的 cookie 会过期，过期后重新运行登录脚本即可。
 
-4. 运行
-
-- 使用真实天气（仅输出 Markdown）：
-
-```bash
-python main.py --no-nlm
-```
-
-- 使用 mock 数据（无需 API Key）：
-
-```bash
-python main.py --mock --no-nlm
-```
-
-- 完整流程（含 NotebookLM 生成图片 + 推送）：
-
-```bash
-python main.py
-```
-
-- 跳过小红书发布：
-
-```bash
-python main.py --no-xhs
-```
-
-## 输出
-
-- Markdown：`output/clothing_guide_YYYY-MM-DD.md`
-- 图片（启用 NotebookLM 时）：`output/*.png`
-
 ## GitHub Actions 自动运行
 
-项目已配置 GitHub Actions，每天北京时间 8:00 自动运行全流程并推送到 Telegram。
+项目已配置 GitHub Actions，每天北京时间 8:00 自动运行完整流程。
 
 ### 配置 Secrets
 
-在仓库 Settings → Secrets and variables → Actions 中添加以下 Secrets：
+在仓库 Settings → Secrets and variables → Actions 中添加：
 
 | Secret 名称 | 说明 |
 |---|---|
@@ -117,8 +194,6 @@ python main.py --no-xhs
 
 ### 导出 NotebookLM 认证
 
-本地登录后，将 `storage_state.json` 编码为 base64 并存入 Secret：
-
 ```bash
 # 本地先登录（仅需一次）
 notebooklm login
@@ -127,11 +202,9 @@ notebooklm login
 base64 < ~/.notebooklm/storage_state.json
 ```
 
-> 注意：NotebookLM 的 cookie 会过期，过期后需重新 `notebooklm login` 并更新 Secret。
+> NotebookLM 的 cookie 会过期，过期后需重新 `notebooklm login` 并更新 Secret。
 
 ### 导出小红书认证（可选）
-
-本地登录后，将 `storage_state.json` 编码为 base64 并存入 Secret：
 
 ```bash
 # 本地先登录（仅需一次）
@@ -146,3 +219,15 @@ base64 < ~/.xhs/storage_state.json
 ### 手动触发
 
 在仓库 Actions 页面选择 "每日穿搭指南生成" → Run workflow 即可手动运行。
+
+## 依赖
+
+| 库 | 用途 |
+|---|---|
+| `httpx` | HTTP 客户端（天气 API + Telegram） |
+| `pyyaml` | YAML 配置文件解析 |
+| `python-dotenv` | 环境变量管理 |
+| `notebooklm-py` | NotebookLM API 客户端 |
+| `playwright` | 小红书浏览器自动化 |
+| `zhdate` | 农历日期转换（节日祝福） |
+| `sxtwl` | 寿星天文历（二十四节气计算） |

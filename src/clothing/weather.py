@@ -45,7 +45,7 @@ class CityWeather:
     location_id: str
     current: CurrentWeather
     forecast: DailyForecast
-    clothing: None = None  # OpenWeatherMap 无穿衣指数，由 clothing_index 模块生成
+    clothing: None = None  # OpenWeatherMap 无穿衣指数，由 clothing.index 模块生成
 
 
 def _wind_deg_to_dir(deg: float) -> str:
@@ -107,14 +107,12 @@ class OpenWeatherClient:
         data = await self._request("/forecast", {"lat": lat, "lon": lon})
         today_str = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 
-        # 筛选今天的预报条目
         today_items = [
             item for item in data["list"]
             if item["dt_txt"].startswith(today_str)
         ]
-        # 如果今天已经没有剩余时段（接近午夜），取明天的数据
         if not today_items:
-            today_items = data["list"][:8]  # 前8条 = 24小时
+            today_items = data["list"][:8]
 
         temps = [item["main"]["temp"] for item in today_items]
         humidities = [item["main"]["humidity"] for item in today_items]
@@ -123,7 +121,6 @@ class OpenWeatherClient:
             for item in today_items
         ]
 
-        # 白天/夜间天气描述（按时段划分）
         day_texts = []
         night_texts = []
         for item in today_items:
@@ -134,7 +131,6 @@ class OpenWeatherClient:
             else:
                 night_texts.append(desc)
 
-        # 取出现频率最高的天气描述
         def most_common(texts: list[str], fallback: str) -> str:
             if not texts:
                 return fallback
@@ -143,7 +139,6 @@ class OpenWeatherClient:
         text_day = most_common(day_texts, today_items[0]["weather"][0]["description"])
         text_night = most_common(night_texts, text_day)
 
-        # 风向取第一条
         wind_deg = today_items[0]["wind"].get("deg", 0)
         wind_speed = max(item["wind"].get("speed", 0) for item in today_items)
 
@@ -156,7 +151,7 @@ class OpenWeatherClient:
             wind_dir_day=_wind_deg_to_dir(wind_deg),
             wind_scale_day=_wind_speed_to_scale(wind_speed),
             humidity=str(round(sum(humidities) / len(humidities))),
-            uv_index="0",  # 免费版无 UV 数据
+            uv_index="0",
             precip=str(round(sum(precips), 1)),
         )
 

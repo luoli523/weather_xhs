@@ -1,13 +1,11 @@
 """内容生成模块
 
 将穿搭建议格式化为结构化 Markdown 内容，供 NotebookLM 消费。
-用 NotebookLM 内置的 infographic 工具生成适合小红书发布的穿搭图片。
-内容格式针对 infographic 生成做了优化：表格化数据、突出关键指标、清晰分段。
 """
 
 from datetime import datetime
 from typing import Optional
-from .clothing_index import ClothingAdvice
+from .index import ClothingAdvice
 
 
 def generate_markdown(advices: list[ClothingAdvice], date: Optional[str] = None) -> str:
@@ -21,13 +19,11 @@ def generate_markdown(advices: list[ClothingAdvice], date: Optional[str] = None)
 
     lines = []
 
-    # 标题和概述
     lines.append(f"# 今日穿搭指南 | {date} 星期{weekday}")
     lines.append("")
     lines.append(f"每日穿搭建议，让你出门不纠结！覆盖 {len(advices)} 个城市的天气穿搭推荐。")
     lines.append("")
 
-    # 总览表格——方便 NotebookLM 一目了然提取对比数据
     lines.append("## 各城市天气总览")
     lines.append("")
     lines.append("| 城市 | 天气 | 温度范围 | 体感温度 | 穿衣等级 |")
@@ -36,7 +32,6 @@ def generate_markdown(advices: list[ClothingAdvice], date: Optional[str] = None)
         lines.append(f"| {adv.city_name} | {adv.weather_desc} | {adv.temp_range} | {adv.feels_like} | {adv.clothing_category} |")
     lines.append("")
 
-    # 各城市详细穿搭建议
     lines.append("## 各城市穿搭详情")
     lines.append("")
 
@@ -60,7 +55,6 @@ def generate_markdown(advices: list[ClothingAdvice], date: Optional[str] = None)
             lines.append(f"> {adv.api_advice}")
             lines.append("")
 
-    # 底部
     lines.append("---")
     lines.append("")
     lines.append("数据来源：OpenWeatherMap | 穿搭建议仅供参考，请结合个人体质和实际情况调整")

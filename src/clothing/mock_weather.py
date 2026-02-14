@@ -17,7 +17,6 @@ _MOCK_DATA = {
     "成都": {"temp": 10, "high": 13, "low": 6, "text": "阴", "night": "阴", "humidity": 80, "wind": "北风"},
 }
 
-# 通用 fallback
 _DEFAULT = {"temp": 12, "high": 16, "low": 8, "text": "多云", "night": "晴", "humidity": 55, "wind": "东风"}
 
 
@@ -26,7 +25,6 @@ class MockWeatherClient:
 
     async def get_city_weather(self, city_name: str, location_id: str) -> CityWeather:
         d = _MOCK_DATA.get(city_name, _DEFAULT)
-        # 加一点随机波动让数据更自然
         temp_offset = random.randint(-1, 1)
 
         today_str = datetime.now().strftime("%Y-%m-%d")

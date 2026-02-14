@@ -42,7 +42,6 @@ def _get_outfit_suggestion(temp: float) -> tuple[str, str, list[str]]:
         high_ok = high is None or temp < high
         if low_ok and high_ok:
             return _level, outfit, tips
-    # fallback
     return "舒适", "长袖 + 长裤，适当搭配外套", ["注意查看实时天气变化"]
 
 
@@ -88,7 +87,6 @@ def generate_clothing_advice(city_weather: CityWeather) -> ClothingAdvice:
     extra_tips.extend(_rain_tips(w.forecast.text_day, w.forecast.precip))
     extra_tips.extend(_uv_tips(w.forecast.uv_index))
 
-    # 温差提示
     try:
         temp_diff = float(w.forecast.temp_max) - float(w.forecast.temp_min)
         if temp_diff >= 10:
@@ -96,7 +94,6 @@ def generate_clothing_advice(city_weather: CityWeather) -> ClothingAdvice:
     except (ValueError, TypeError):
         pass
 
-    # 如果 API 提供了穿衣指数，优先使用其等级和类别
     clothing_level = w.clothing.level if w.clothing else str(int(avg_temp // 5))
     clothing_category = w.clothing.category if w.clothing else _level
     api_advice = w.clothing.text if w.clothing else ""

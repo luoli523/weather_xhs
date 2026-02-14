@@ -2,6 +2,8 @@
 
 主流程：读取配置 → 获取天气 → 生成穿衣指数 → 输出 Markdown
      → 上传 NotebookLM → 用 NotebookLM 内置 infographic 工具按城市生成穿搭图片
+     → 推送 Telegram → 发布小红书
+     → 节气检测 → 节气 infographic → 推送 Telegram → 发布小红书
 """
 
 import asyncio
@@ -14,13 +16,28 @@ from pathlib import Path
 import yaml
 from dotenv import load_dotenv
 
-from src.weather import OpenWeatherClient
-from src.mock_weather import MockWeatherClient
-from src.clothing_index import generate_clothing_advice
-from src.content_generator import generate_markdown, save_markdown
-from src.telegram_notifier import send_images as telegram_send_images
-from src.telegram_notifier import send_images_simple as telegram_send_simple
-from src.xhs_publisher import publish_images as xhs_publish_images
+# ── 穿搭模块 ──
+from src.clothing.weather import OpenWeatherClient
+from src.clothing.mock_weather import MockWeatherClient
+from src.clothing.index import generate_clothing_advice
+from src.clothing.content import generate_markdown, save_markdown
+from src.clothing.telegram import send_images as telegram_send_images
+from src.clothing.telegram import send_images_simple as telegram_send_simple
+from src.clothing.xhs import publish_images as xhs_publish_images
+
+# ── 共享模块 ──
+from src.common.telegram import send_photo as telegram_send_photo, get_telegram_config
+from src.common.xhs import get_xhs_config, publish_note
+
+# ── 节气模块 ──
+from src.solar_term.detector import get_solar_term
+from src.solar_term.content import (
+    generate_markdown as solar_term_generate_markdown,
+    save_markdown as solar_term_save_markdown,
+    build_prompt as solar_term_build_prompt,
+    build_xhs_content as solar_term_build_xhs_content,
+    build_telegram_caption as solar_term_build_telegram_caption,
+)
 
 
 def parse_args() -> argparse.Namespace:
@@ -53,7 +70,6 @@ def load_config(config_path: str = "config/config.yaml", require_api_key: bool =
     with open(config_path, "r", encoding="utf-8") as f:
         config = yaml.safe_load(f)
 
-    # 替换环境变量引用
     api_key = config["openweathermap"]["api_key"]
     if api_key.startswith("${") and api_key.endswith("}"):
         env_var = api_key[2:-1]
@@ -91,12 +107,97 @@ async def fetch_all_weather(config: dict, use_mock: bool = False) -> list:
     return city_weathers
 
 
+# ── 节气专属流程 ──
+
+
+async def _run_solar_term_pipeline(
+    solar_term: dict,
+    today: str,
+    output_dir: Path,
+    skip_notebooklm: bool,
+    args: argparse.Namespace,
+):
+    """节气专属流程：生成 Markdown → NotebookLM infographic → Telegram → 小红书"""
+
+    # 8a. 生成节气 Markdown
+    md_content = solar_term_generate_markdown(solar_term)
+    md_file = output_dir / f"solar_term_{solar_term['name']}_{today}.md"
+    solar_term_save_markdown(md_content, str(md_file))
+    print(f"  📄 节气 Markdown: {md_file}")
+
+    if skip_notebooklm:
+        print("  ⏭ 跳过 NotebookLM（--no-nlm）")
+        return
+
+    # 8b. NotebookLM 生成节气 infographic
+    try:
+        from src.solar_term.notebooklm import run_pipeline as solar_term_run_pipeline
+    except ImportError as e:
+        print(f"  ❌ NotebookLM 依赖未安装: {e}")
+        return
+
+    prompt = solar_term_build_prompt(solar_term)
+    artifact_name = f"{solar_term['name']}_{today}"
+
+    solar_image = await solar_term_run_pipeline(
+        md_file=str(md_file),
+        prompt=prompt,
+        artifact_name=artifact_name,
+        output_dir=str(output_dir),
+    )
+
+    if not solar_image:
+        print("  ❌ 节气 infographic 生成失败")
+        return
+
+    print(f"  🎨 节气图片: {solar_image}")
+
+    # 8c. Telegram 发送节气图片
+    tg_config = get_telegram_config()
+    if tg_config:
+        bot_token, chat_id = tg_config
+        caption = solar_term_build_telegram_caption(solar_term)
+        print(f"  📱 推送节气图片到 Telegram...")
+        ok = await telegram_send_photo(bot_token, chat_id, solar_image, caption=caption)
+        if ok:
+            print(f"  ✅ 节气图片已推送到 Telegram")
+        else:
+            print(f"  ⚠ 节气图片 Telegram 推送失败")
+    else:
+        print("  ⏭ Telegram 未配置，跳过节气推送")
+
+    # 8d. 小红书发布节气笔记
+    if hasattr(args, "no_xhs") and args.no_xhs:
+        print("  ⏭ 跳过小红书（--no-xhs）")
+    else:
+        xhs_config = get_xhs_config()
+        if xhs_config:
+            title, content, tags = solar_term_build_xhs_content(solar_term)
+            print(f"  📕 发布节气笔记到小红书...")
+            print(f"    标题: {title}")
+            success = await publish_note(
+                image_files=[solar_image],
+                title=title,
+                content=content,
+                tags=tags,
+                storage_state_path=xhs_config["storage_state_path"],
+            )
+            if success:
+                print(f"  ✅ 节气笔记已发布到小红书")
+            else:
+                print(f"  ⚠ 节气笔记小红书发布失败")
+        else:
+            print("  ⏭ 小红书未配置，跳过节气发布")
+
+
+# ── 主流程 ──
+
+
 async def main():
     args = parse_args()
     use_mock = args.mock
     skip_notebooklm = args.no_nlm
 
-    # 映射 CLI gender 参数到中文 key（与 style_options.yaml 一致）
     _gender_map = {"female": "女性", "male": "男性", "neutral": "中性"}
     gender = _gender_map.get(args.gender) if args.gender != "random" else None
 
@@ -118,8 +219,8 @@ async def main():
         if args.send_telegram:
             await telegram_send_simple(image_paths, date=today)
         if args.send_xhs:
-            from src.xhs_publisher import publish_images_simple as xhs_publish_simple
-            await xhs_publish_simple(image_paths, date=today)
+            from src.clothing.xhs import publish_images_simple as xhs_publish_simple
+            await xhs_publish_simple(image_paths, date_str=today)
         print("\n✅ 完成！")
         return
 
@@ -162,13 +263,13 @@ async def main():
         print("\n⏭ 跳过 NotebookLM（--no-nlm）")
     else:
         try:
-            from src.notebooklm import run_notebooklm_pipeline
+            from src.clothing.notebooklm import run_pipeline as clothing_run_pipeline
         except ImportError as e:
             print(f"\n❌ NotebookLM 依赖未安装: {e}")
             print("请先安装依赖：pip install -r requirements.txt")
             sys.exit(1)
 
-        image_files = await run_notebooklm_pipeline(
+        image_files = await clothing_run_pipeline(
             md_file=str(output_file),
             advices=advices,
             output_dir=str(output_dir),
@@ -186,6 +287,14 @@ async def main():
             print("\n⏭ 跳过小红书（--no-xhs）")
         else:
             await xhs_publish_images(image_files, advices, date=today)
+
+    # ── 8. 节气检测与专属内容生成 ──
+    solar_term = get_solar_term(today)
+    if solar_term:
+        print(f"\n🌿 今日节气：{solar_term['name']}！启动节气内容生成流程...")
+        await _run_solar_term_pipeline(solar_term, today, output_dir, skip_notebooklm, args)
+    else:
+        print(f"\n🌿 今日非节气日，跳过节气内容生成")
 
     print("\n✅ 全部完成！")
 
