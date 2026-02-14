@@ -20,25 +20,27 @@ from .clothing_index import ClothingAdvice
 # ─── 页面选择器（集中管理，方便后续维护） ───
 
 SELECTORS = {
-    # 发布笔记标签页（默认可能是视频上传，需要先切到图文）
-    "publish_note_tab": 'div.creator-tab:has-text("发布笔记"), span:has-text("发布笔记"), a:has-text("发布笔记")',
-    # 图片上传 file input（隐藏元素，需用 state="attached"）
-    # 图片 input 的 accept 包含 image 格式，与视频 input 区分
-    "image_file_input": 'input[type="file"][accept*=".jpg"], input[type="file"][accept*=".png"], input[type="file"][accept*="image"]',
-    # 通用 file input 备选（当图片专用选择器找不到时）
-    "file_input_any": 'input[type="file"]',
-    "upload_area": ".upload-wrapper, .upload-input",
-    "image_preview": ".c-image, .img-container, img[src*='upload'], img[src*='spectrum'], .publish-image",
-    # 标题输入
-    "title_input": '#title-input input, input[placeholder*="标题"], .c-input_inner input',
+    # 步骤 1：点击"发布笔记"从视频页切换到笔记发布
+    "publish_note_btn": '//*[text()="发布笔记"]',
+    # 步骤 2：点击"上传图文"切换到图片上传模式
+    "upload_image_btn": '//*[text()="上传图文"]',
+    # 步骤 3：图片 file input（隐藏元素，逐个上传）
+    "file_input": 'input[type="file"]',
+    # 图片预览（判断上传是否完成）
+    "image_preview": ".c-image, .img-container, img[src*='spectrum'], .publish-image, .images-area img",
+    # 标题输入（小红书特定 placeholder）
+    "title_input": '//*[@placeholder="填写标题，可能会有更多赞哦～"]',
+    "title_input_alt": 'input[placeholder*="标题"]',
     # 正文编辑器
-    "content_editor": '#post-textarea .ql-editor, div[contenteditable="true"].ql-editor, div[contenteditable="true"]',
+    "content_editor": '//*[@placeholder="填写更全面的描述信息，让更多的人看到你吧！"]',
+    "content_editor_alt": 'div[contenteditable="true"]',
+    # 话题标签候选列表项
+    "topic_item": ".publish-topic-item",
     # 发布按钮
-    "publish_button": 'button.publishBtn, button.css-k01y1m, button:has-text("发布")',
+    "publish_button": '//*[text()="发布"]',
+    "publish_button_alt": 'button:has-text("发布")',
     # 发布成功标识
     "publish_success": 'text=发布成功, .success-hint, text=已发布',
-    # 登录检测
-    "login_avatar": ".user-avatar, .user-info, .creator-avatar",
 }
 
 # ─── 默认配置 ───
@@ -130,6 +132,25 @@ async def _slow_type(page, selector: str, text: str):
             await asyncio.sleep(random.uniform(0.2, 0.5))
 
 
+async def _click_by_text(page, text: str, timeout: int = 5000) -> bool:
+    """通过精确文本匹配点击元素，尝试 XPath 和 CSS 两种方式。"""
+    # XPath 精确文本匹配
+    try:
+        el = await page.wait_for_selector(f'//*[text()="{text}"]', timeout=timeout)
+        await el.click()
+        return True
+    except Exception:
+        pass
+    # CSS :has-text（可能匹配更宽泛）
+    try:
+        el = await page.wait_for_selector(f'text="{text}"', timeout=timeout // 2)
+        await el.click()
+        return True
+    except Exception:
+        pass
+    return False
+
+
 async def publish_note(
     image_files: list[str],
     title: str,
@@ -137,7 +158,11 @@ async def publish_note(
     tags: list[str],
     storage_state_path: str,
 ) -> bool:
-    """通过 Playwright 自动化发布小红书笔记。
+    """通过 Playwright 自动化发布小红书图文笔记。
+
+    流程参考小红书创作者平台实际页面结构：
+      打开发布页 → 点击「发布笔记」→ 点击「上传图文」
+      → 逐张上传图片 → 填标题 → 填正文+标签 → 点击发布
 
     Args:
         image_files: 要上传的图片文件路径列表
@@ -163,103 +188,61 @@ async def publish_note(
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(storage_state=storage_state_path)
         page = await context.new_page()
+        page.set_default_timeout(15000)
 
         try:
             # ── 1. 打开创作中心发布页 ──
-            print("  [1/6] 打开创作中心...")
+            print("  [1/7] 打开创作中心...")
             await page.goto(CREATOR_PUBLISH_URL, wait_until="networkidle", timeout=30000)
             await _human_delay(2, 3)
 
-            # 检测是否需要登录（跳转到了登录页面）
+            # 检测是否需要登录
             current_url = page.url
             if "login" in current_url.lower() or "signin" in current_url.lower():
                 print("  ❌ 登录态已过期，请重新运行 python scripts/xhs_login.py")
                 await page.screenshot(path="output/xhs_error_login.png")
                 return False
 
-            # 保存页面截图供调试
-            await page.screenshot(path="output/xhs_debug_page_loaded.png")
+            await page.screenshot(path="output/xhs_debug_1_page_loaded.png")
             print(f"  当前 URL: {page.url}")
 
-            # ── 2. 切换到「发布笔记」标签页 ──
-            # 创作中心默认可能在视频上传页，需要切换到图文笔记
-            print("  [2/6] 切换到发布笔记...")
-            switched = False
-            for tab_selector in [
-                'div:has-text("发布笔记")',
-                'span:has-text("发布笔记")',
-                'a:has-text("发布笔记")',
-                'li:has-text("发布笔记")',
-            ]:
-                try:
-                    tab = await page.wait_for_selector(tab_selector, timeout=3000)
-                    await tab.click()
-                    switched = True
-                    print("  ✅ 已切换到发布笔记")
-                    await _human_delay(1, 2)
-                    break
-                except Exception:
-                    continue
+            # ── 2. 点击「发布笔记」 ──
+            # 创作中心默认在视频上传页，需要先切到笔记模式
+            print("  [2/7] 点击「发布笔记」...")
+            if await _click_by_text(page, "发布笔记"):
+                print("  ✅ 已点击「发布笔记」")
+                await _human_delay(1, 2)
+            else:
+                print("  ⚠ 未找到「发布笔记」按钮，可能已在笔记页面")
 
-            if not switched:
-                # 可能已经在笔记发布页，继续
-                print("  ⚠ 未找到发布笔记标签，尝试继续（可能已在笔记页）")
+            await page.screenshot(path="output/xhs_debug_2_after_note_tab.png")
 
-            await page.screenshot(path="output/xhs_debug_after_tab.png")
+            # ── 3. 点击「上传图文」 ──
+            # 笔记页面可能还需要选择图文模式
+            print("  [3/7] 点击「上传图文」...")
+            if await _click_by_text(page, "上传图文"):
+                print("  ✅ 已点击「上传图文」")
+                await _human_delay(1, 2)
+            else:
+                print("  ⚠ 未找到「上传图文」按钮，继续尝试上传")
 
-            # ── 3. 上传图片 ──
-            print(f"  [3/6] 上传 {len(image_files)} 张图片...")
+            await page.screenshot(path="output/xhs_debug_3_after_upload_tab.png")
+
+            # ── 4. 逐张上传图片 ──
+            print(f"  [4/7] 上传 {len(image_files)} 张图片...")
             abs_paths = [str(Path(f).resolve()) for f in image_files]
 
-            # 查找图片专用的 file input（accept 包含图片格式）
-            # file input 通常是隐藏的，使用 state="attached" 而非等待可见
-            file_input = None
-
-            # 策略 1：查找接受图片格式的 input
-            try:
+            for i, img_path in enumerate(abs_paths):
+                # 每次上传前重新获取 file input（上传后 DOM 可能刷新）
                 file_input = await page.wait_for_selector(
-                    SELECTORS["image_file_input"], state="attached", timeout=5000
+                    SELECTORS["file_input"], state="attached", timeout=10000
                 )
-                print("  找到图片上传 input")
-            except Exception:
-                pass
+                await file_input.set_input_files(img_path)
+                print(f"    [{i+1}/{len(abs_paths)}] 已提交: {Path(img_path).name}")
+                await _human_delay(2, 3)
 
-            # 策略 2：查找所有 file input，排除纯视频的
-            if not file_input:
-                try:
-                    all_inputs = await page.query_selector_all('input[type="file"]')
-                    for inp in all_inputs:
-                        accept = await inp.get_attribute("accept") or ""
-                        # 跳过纯视频 input
-                        if accept and all(
-                            ext in accept
-                            for ext in [".mp4", ".mov"]
-                        ) and ".jpg" not in accept and ".png" not in accept:
-                            continue
-                        file_input = inp
-                        accept_display = accept[:60] if accept else "(无限制)"
-                        print(f"  找到 file input (accept={accept_display})")
-                        break
-                except Exception:
-                    pass
-
-            # 策略 3：最后兜底 — 取第一个 file input
-            if not file_input:
-                try:
-                    file_input = await page.wait_for_selector(
-                        SELECTORS["file_input_any"], state="attached", timeout=5000
-                    )
-                    accept = await file_input.get_attribute("accept") or "(无限制)"
-                    print(f"  兜底: 使用第一个 file input (accept={accept[:60]})")
-                except Exception:
-                    print("  ❌ 找不到任何文件上传 input")
-                    await page.screenshot(path="output/xhs_error_no_input.png")
-                    return False
-
-            await file_input.set_input_files(abs_paths)
-
-            # 等待图片上传和处理完成
-            await _human_delay(3, 5)
+            # 等待所有图片处理完成
+            await _human_delay(2, 4)
             try:
                 await page.wait_for_selector(
                     SELECTORS["image_preview"], timeout=30000
@@ -268,25 +251,18 @@ async def publish_note(
             except Exception:
                 print("  ⚠ 图片预览检测超时，继续尝试...")
 
-            await page.screenshot(path="output/xhs_debug_after_upload.png")
+            await page.screenshot(path="output/xhs_debug_4_after_upload.png")
             await _human_delay(1, 2)
 
-            # ── 4. 填写标题 ──
-            print(f"  [4/6] 填写标题: {title}")
+            # ── 5. 填写标题 ──
+            print(f"  [5/7] 填写标题: {title}")
             title_filled = False
-            for title_selector in [
-                SELECTORS["title_input"],
-                'input[placeholder*="填写标题"]',
-                'input[placeholder*="标题"]',
-                '#title-input',
-            ]:
+            for sel in [SELECTORS["title_input"], SELECTORS["title_input_alt"]]:
                 try:
-                    title_input = await page.wait_for_selector(
-                        title_selector, timeout=3000
-                    )
-                    await title_input.click()
-                    await _human_delay(0.3, 0.6)
-                    await title_input.fill(title)
+                    el = await page.wait_for_selector(sel, timeout=5000)
+                    await el.click()
+                    await _human_delay(0.3, 0.5)
+                    await el.fill(title)
                     title_filled = True
                     break
                 except Exception:
@@ -297,24 +273,39 @@ async def publish_note(
 
             await _human_delay(0.5, 1)
 
-            # ── 5. 填写正文和标签 ──
-            print("  [5/6] 填写正文...")
-            tag_text = " ".join(f"#{t}" for t in tags)
-            full_content = f"{content}\n\n{tag_text}"
+            # ── 6. 填写正文 + 话题标签 ──
+            print("  [6/7] 填写正文...")
             content_filled = False
-
-            for editor_selector in [
-                SELECTORS["content_editor"],
-                'div[contenteditable="true"]',
-                '.ql-editor',
-            ]:
+            for sel in [SELECTORS["content_editor"], SELECTORS["content_editor_alt"]]:
                 try:
-                    editor = await page.wait_for_selector(
-                        editor_selector, timeout=3000
-                    )
+                    editor = await page.wait_for_selector(sel, timeout=5000)
                     await editor.click()
-                    await _human_delay(0.3, 0.6)
-                    await editor.fill(full_content)
+                    await _human_delay(0.3, 0.5)
+
+                    # 先输入正文
+                    await editor.fill(content)
+                    await _human_delay(0.5, 1)
+
+                    # 逐个输入话题标签（输入后从候选列表中点击确认）
+                    for tag in tags:
+                        tag_with_hash = f"#{tag}"
+                        await editor.type(f" {tag_with_hash}")
+                        await _human_delay(0.8, 1.5)
+                        # 尝试从话题候选列表点击匹配项
+                        try:
+                            topic_items = await page.query_selector_all(
+                                SELECTORS["topic_item"]
+                            )
+                            for item in topic_items:
+                                item_text = await item.inner_text()
+                                if tag in item_text:
+                                    await item.click()
+                                    print(f"    标签已选: {tag_with_hash}")
+                                    break
+                        except Exception:
+                            pass  # 候选列表未出现，标签仍会作为文本保留
+                        await _human_delay(0.3, 0.6)
+
                     content_filled = True
                     break
                 except Exception:
@@ -325,24 +316,17 @@ async def publish_note(
                 await page.screenshot(path="output/xhs_error_editor.png")
                 return False
 
+            await page.screenshot(path="output/xhs_debug_6_before_publish.png")
             await _human_delay(1, 2)
 
-            # ── 6. 点击发布 ──
-            print("  [6/6] 点击发布...")
-            await page.screenshot(path="output/xhs_debug_before_publish.png")
-
+            # ── 7. 点击发布 ──
+            print("  [7/7] 点击发布...")
             publish_clicked = False
-            for btn_selector in [
-                SELECTORS["publish_button"],
-                'button:has-text("发布")',
-                'div.btn:has-text("发布")',
-            ]:
+            for sel in [SELECTORS["publish_button"], SELECTORS["publish_button_alt"]]:
                 try:
-                    publish_btn = await page.wait_for_selector(
-                        btn_selector, timeout=3000
-                    )
+                    btn = await page.wait_for_selector(sel, timeout=5000)
                     await _human_delay(0.5, 1)
-                    await publish_btn.click()
+                    await btn.click()
                     publish_clicked = True
                     break
                 except Exception:
@@ -355,13 +339,11 @@ async def publish_note(
 
             # 等待发布结果
             await _human_delay(3, 5)
-
-            # 检查是否发布成功
             current_url = page.url
-            await page.screenshot(path="output/xhs_debug_after_publish.png")
+            await page.screenshot(path="output/xhs_debug_7_after_publish.png")
             print(f"  发布后 URL: {current_url}")
 
-            # URL 离开了发布页面通常说明发布成功
+            # URL 离开了 publish/publish 通常说明发布成功
             if "publish/publish" not in current_url:
                 print("  ✅ 笔记发布成功！")
                 return True
@@ -374,7 +356,7 @@ async def publish_note(
                 print("  ✅ 笔记发布成功！")
                 return True
             except Exception:
-                print("  ⚠ 发布状态未知，请手动确认（截图已保存到 output/xhs_debug_after_publish.png）")
+                print("  ⚠ 发布状态未知，请检查截图 output/xhs_debug_7_after_publish.png")
                 return False
 
         except Exception as e:
