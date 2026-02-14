@@ -43,12 +43,23 @@ jobs:
         env:
           XHS_STORAGE_STATE: ${{ secrets.XHS_STORAGE_STATE }}
 
+      - name: Restore Instagram session
+        if: env.IG_SESSION != ''
+        run: |
+          mkdir -p ~/.instagram
+          echo "$IG_SESSION" | base64 -d > ~/.instagram/session.json
+          echo "IG_ENABLED=true" >> "$GITHUB_ENV"
+        env:
+          IG_SESSION: ${{ secrets.IG_SESSION }}
+
       - name: Run pipeline
         env:
           OPENWEATHERMAP_API_KEY: ${{ secrets.OPENWEATHERMAP_API_KEY }}
           TELEGRAM_ENABLED: "true"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          IG_USERNAME: ${{ secrets.IG_USERNAME }}
+          IG_PASSWORD: ${{ secrets.IG_PASSWORD }}
         run: python main.py
 
       - name: Upload output as artifact

@@ -123,6 +123,43 @@ def build_xhs_content(term: dict) -> tuple[str, str, list[str]]:
     return title, content, tags
 
 
+# ── Instagram 帖子文案 ──
+
+
+def build_ig_caption(term: dict) -> str:
+    """构建节气 Instagram 帖子文案。"""
+    customs_text = "\n".join(f"  • {c}" for c in term["customs"])
+
+    lines = [
+        f"🌿 今日{term['name']}（{term['date']}）",
+        "",
+        f"📖 {term['meaning']}",
+        "",
+        term["description"],
+        "",
+        "🎎 传统习俗",
+        customs_text,
+        "",
+        f"🍽 节气美食：{term['food']}",
+        "",
+        f"💆 养生贴士：{term['health_tip']}",
+        "",
+        " ".join([
+            f"#{term['name']}",
+            "#二十四节气",
+            "#节气",
+            "#SolarTerms",
+            f"#{term['season']}季养生",
+            "#传统文化",
+            "#中国节气",
+            "#养生",
+            "#ChineseCulture",
+        ]),
+    ]
+
+    return "\n".join(lines)
+
+
 # ── Telegram 消息文案 ──
 
 

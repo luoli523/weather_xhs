@@ -2,8 +2,8 @@
 
 主流程：读取配置 → 获取天气 → 生成穿衣指数 → 输出 Markdown
      → 上传 NotebookLM → 用 NotebookLM 内置 infographic 工具按城市生成穿搭图片
-     → 推送 Telegram → 发布小红书
-     → 节气检测 → 节气 infographic → 推送 Telegram → 发布小红书
+     → 推送 Telegram → 发布小红书 → 发布 Instagram
+     → 节气检测 → 节气 infographic → 推送 Telegram → 发布小红书 → 发布 Instagram
 """
 
 import asyncio
@@ -24,10 +24,12 @@ from src.clothing.content import generate_markdown, save_markdown
 from src.clothing.telegram import send_images as telegram_send_images
 from src.clothing.telegram import send_images_simple as telegram_send_simple
 from src.clothing.xhs import publish_images as xhs_publish_images
+from src.clothing.instagram import publish_images as ig_publish_images
 
 # ── 共享模块 ──
 from src.common.telegram import send_photo as telegram_send_photo, get_telegram_config
 from src.common.xhs import get_xhs_config, publish_note
+from src.common.instagram import get_ig_config, publish_album as ig_publish_album
 
 # ── 节气模块 ──
 from src.solar_term.detector import get_solar_term
@@ -37,6 +39,7 @@ from src.solar_term.content import (
     build_prompt as solar_term_build_prompt,
     build_xhs_content as solar_term_build_xhs_content,
     build_telegram_caption as solar_term_build_telegram_caption,
+    build_ig_caption as solar_term_build_ig_caption,
 )
 
 
@@ -51,6 +54,7 @@ def parse_args() -> argparse.Namespace:
         help="指定人物性别 (female=女性, male=男性, neutral=中性, random=随机)，默认 female",
     )
     parser.add_argument("--no-xhs", action="store_true", help="跳过小红书发布")
+    parser.add_argument("--no-ig", action="store_true", help="跳过 Instagram 发布")
     parser.add_argument(
         "--send-telegram",
         action="store_true",
@@ -60,6 +64,11 @@ def parse_args() -> argparse.Namespace:
         "--send-xhs",
         action="store_true",
         help="跳过生成流程，仅发送当天已有图片到小红书",
+    )
+    parser.add_argument(
+        "--send-ig",
+        action="store_true",
+        help="跳过生成流程，仅发送当天已有图片到 Instagram",
     )
     return parser.parse_args()
 
@@ -189,6 +198,26 @@ async def _run_solar_term_pipeline(
         else:
             print("  ⏭ 小红书未配置，跳过节气发布")
 
+    # 8e. Instagram 发布节气帖子
+    if hasattr(args, "no_ig") and args.no_ig:
+        print("  ⏭ 跳过 Instagram（--no-ig）")
+    else:
+        ig_config = get_ig_config()
+        if ig_config:
+            caption = solar_term_build_ig_caption(solar_term)
+            print(f"  📷 发布节气帖子到 Instagram...")
+            success = await ig_publish_album(
+                image_files=[solar_image],
+                caption=caption,
+                config=ig_config,
+            )
+            if success:
+                print(f"  ✅ 节气帖子已发布到 Instagram")
+            else:
+                print(f"  ⚠ 节气帖子 Instagram 发布失败")
+        else:
+            print("  ⏭ Instagram 未配置，跳过节气发布")
+
 
 # ── 主流程 ──
 
@@ -203,8 +232,8 @@ async def main():
 
     print("=== 天气穿搭指南生成系统 ===\n")
 
-    # --send-telegram / --send-xhs 模式：跳过生成，直接发送当天已有图片
-    if args.send_telegram or args.send_xhs:
+    # --send-telegram / --send-xhs / --send-ig 模式：跳过生成，直接发送当天已有图片
+    if args.send_telegram or args.send_xhs or args.send_ig:
         load_dotenv()
         today = datetime.now().strftime("%Y-%m-%d")
         output_dir = Path("output")
@@ -221,6 +250,9 @@ async def main():
         if args.send_xhs:
             from src.clothing.xhs import publish_images_simple as xhs_publish_simple
             await xhs_publish_simple(image_paths, date_str=today)
+        if args.send_ig:
+            from src.clothing.instagram import publish_images_simple as ig_publish_simple
+            await ig_publish_simple(image_paths, date_str=today)
         print("\n✅ 完成！")
         return
 
@@ -287,6 +319,12 @@ async def main():
             print("\n⏭ 跳过小红书（--no-xhs）")
         else:
             await xhs_publish_images(image_files, advices, date=today)
+
+        # 7b. 发布到 Instagram
+        if args.no_ig:
+            print("\n⏭ 跳过 Instagram（--no-ig）")
+        else:
+            await ig_publish_images(image_files, advices, date=today)
 
     # ── 8. 节气检测与专属内容生成 ──
     solar_term = get_solar_term(today)
