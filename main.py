@@ -35,9 +35,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--no-xhs", action="store_true", help="跳过小红书发布")
     parser.add_argument(
-        "--send-only",
+        "--send-telegram",
         action="store_true",
-        help="跳过生成流程，仅发送当天已有图片到 Telegram 和小红书",
+        help="跳过生成流程，仅发送当天已有图片到 Telegram",
+    )
+    parser.add_argument(
+        "--send-xhs",
+        action="store_true",
+        help="跳过生成流程，仅发送当天已有图片到小红书",
     )
     return parser.parse_args()
 
@@ -97,8 +102,8 @@ async def main():
 
     print("=== 天气穿搭指南生成系统 ===\n")
 
-    # --send-only 模式：跳过生成，直接发送当天已有图片
-    if args.send_only:
+    # --send-telegram / --send-xhs 模式：跳过生成，直接发送当天已有图片
+    if args.send_telegram or args.send_xhs:
         load_dotenv()
         today = datetime.now().strftime("%Y-%m-%d")
         output_dir = Path("output")
@@ -106,13 +111,13 @@ async def main():
         if not images:
             print(f"❌ 未找到当天图片（{output_dir}/*_{today}.png）")
             sys.exit(1)
-        print(f"📱 --send-only 模式：找到 {len(images)} 张当天图片")
+        print(f"📱 发送模式：找到 {len(images)} 张当天图片")
         for img in images:
             print(f"  {img}")
         image_paths = [str(p) for p in images]
-        await telegram_send_simple(image_paths, date=today)
-        if not args.no_xhs:
-            # 构造简易 advices 用于小红书内容生成
+        if args.send_telegram:
+            await telegram_send_simple(image_paths, date=today)
+        if args.send_xhs:
             from src.xhs_publisher import publish_images_simple as xhs_publish_simple
             await xhs_publish_simple(image_paths, date=today)
         print("\n✅ 完成！")
