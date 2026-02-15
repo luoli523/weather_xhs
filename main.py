@@ -31,6 +31,7 @@ from src.clothing.instagram import publish_images as ig_publish_images
 from src.common.telegram import send_photo as telegram_send_photo, send_message as telegram_send_message, get_telegram_config
 from src.common.xhs import get_xhs_config, publish_note
 from src.common.instagram import get_ig_config, publish_album as ig_publish_album
+from src.common.notebooklm import check_auth as check_nlm_auth
 
 # ── 节气模块 ──
 from src.solar_term.detector import get_solar_term
@@ -440,37 +441,58 @@ async def main():
     if skip_notebooklm:
         print("\n⏭ 跳过 NotebookLM（--no-nlm）")
     else:
-        try:
-            from src.clothing.notebooklm import run_pipeline as clothing_run_pipeline
-        except ImportError as e:
-            print(f"\n❌ NotebookLM 依赖未安装: {e}")
-            print("请先安装依赖：pip install -r requirements.txt")
-            sys.exit(1)
+        # 5a. 先检测 NotebookLM 认证是否有效
+        print("\n🔑 检测 NotebookLM 认证...")
+        nlm_auth_ok = await check_nlm_auth()
+        if not nlm_auth_ok:
+            print("❌ NotebookLM 认证失效，跳过所有 infographic 生成")
+            skip_notebooklm = True  # 后续节气/诗词模块也跳过 NotebookLM
+            tg_config = get_telegram_config()
+            if tg_config:
+                bot_token, chat_id = tg_config
+                await telegram_send_message(
+                    bot_token, chat_id,
+                    f"⚠️ <b>NotebookLM 认证失效</b>\n\n"
+                    f"📅 日期：{today}\n"
+                    f"❌ 无法生成 infographic，已跳过\n"
+                    f"💡 请执行 <code>notebooklm login</code> 重新登录，\n"
+                    f"然后更新 GitHub Secret：\n"
+                    f"<code>base64 &lt; ~/.notebooklm/storage_state.json | gh secret set NOTEBOOKLM_STORAGE_STATE</code>",
+                )
+                print("📱 已通过 Telegram 发送认证失效通知")
 
-        image_files = await clothing_run_pipeline(
-            md_file=str(output_file),
-            advices=advices,
-            output_dir=str(output_dir),
-            gender=gender,
-        )
-        print(f"\n🎨 生成的穿搭图片:")
-        for f in image_files:
-            print(f"  {f}")
+        if not skip_notebooklm:
+            try:
+                from src.clothing.notebooklm import run_pipeline as clothing_run_pipeline
+            except ImportError as e:
+                print(f"\n❌ NotebookLM 依赖未安装: {e}")
+                print("请先安装依赖：pip install -r requirements.txt")
+                sys.exit(1)
 
-        # 6. 推送到 Telegram
-        await telegram_send_images(image_files, advices, date=today)
+            image_files = await clothing_run_pipeline(
+                md_file=str(output_file),
+                advices=advices,
+                output_dir=str(output_dir),
+                gender=gender,
+            )
+            print(f"\n🎨 生成的穿搭图片:")
+            for f in image_files:
+                print(f"  {f}")
 
-        # 7. 发布到小红书
-        if args.no_xhs:
-            print("\n⏭ 跳过小红书（--no-xhs）")
-        else:
-            await xhs_publish_images(image_files, advices, date=today)
+            # 6. 推送到 Telegram
+            await telegram_send_images(image_files, advices, date=today)
 
-        # 7b. 发布到 Instagram
-        if args.no_ig:
-            print("\n⏭ 跳过 Instagram（--no-ig）")
-        else:
-            await ig_publish_images(image_files, advices, date=today)
+            # 7. 发布到小红书
+            if args.no_xhs:
+                print("\n⏭ 跳过小红书（--no-xhs）")
+            else:
+                await xhs_publish_images(image_files, advices, date=today)
+
+            # 7b. 发布到 Instagram
+            if args.no_ig:
+                print("\n⏭ 跳过 Instagram（--no-ig）")
+            else:
+                await ig_publish_images(image_files, advices, date=today)
 
     # ── 8. 节气检测与专属内容生成 ──
     solar_term = await get_solar_term(today)

@@ -12,6 +12,23 @@ from notebooklm import NotebookLMClient, InfographicOrientation, InfographicDeta
 NOTEBOOK_TITLE = "weather_xhs"
 
 
+async def check_auth() -> bool:
+    """检测 NotebookLM 认证是否有效。
+
+    尝试创建客户端并列出 notebook，成功返回 True，失败返回 False。
+    """
+    try:
+        async with await NotebookLMClient.from_storage() as client:
+            await client.notebooks.list()
+            return True
+    except FileNotFoundError:
+        print("  ⚠ NotebookLM storage_state.json 不存在")
+        return False
+    except Exception as e:
+        print(f"  ⚠ NotebookLM 认证失败: {type(e).__name__}: {e}")
+        return False
+
+
 async def find_or_create_notebook(client: NotebookLMClient) -> str:
     """查找 weather_xhs notebook，不存在则创建。返回 notebook_id"""
     notebooks = await client.notebooks.list()
