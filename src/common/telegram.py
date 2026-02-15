@@ -29,6 +29,31 @@ def get_telegram_config() -> tuple[str, str] | None:
     return bot_token, chat_id
 
 
+async def send_message(
+    bot_token: str,
+    chat_id: str,
+    text: str,
+) -> bool:
+    """发送纯文本消息到 Telegram
+
+    Returns:
+        True 发送成功，False 发送失败
+    """
+    url = f"{TELEGRAM_API}/bot{bot_token}/sendMessage"
+
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.post(
+            url,
+            data={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
+        )
+
+    if resp.status_code == 200 and resp.json().get("ok"):
+        return True
+    else:
+        print(f"    ⚠ Telegram 消息发送失败: {resp.status_code} {resp.text[:200]}")
+        return False
+
+
 async def send_photo(
     bot_token: str,
     chat_id: str,

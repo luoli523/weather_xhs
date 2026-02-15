@@ -1,12 +1,11 @@
 """节气内容生成模块
 
-生成节气相关的 Markdown（NotebookLM source）、NotebookLM prompt、
+生成节气相关的 Markdown（NotebookLM source）、
 小红书笔记内容和 Telegram 消息文案。
+infographic prompt 由 GPT 在 detector.py 中动态生成。
 """
 
 from pathlib import Path
-
-import yaml
 
 
 # ── Markdown 生成（作为 NotebookLM Source）──
@@ -47,33 +46,6 @@ def save_markdown(content: str, output_path: str) -> str:
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(content)
     return output_path
-
-
-# ── NotebookLM Prompt ──
-
-
-def load_prompt(config_path: str = "config/prompts.yaml") -> str:
-    """加载节气 infographic prompt 模板"""
-    with open(config_path, "r", encoding="utf-8") as f:
-        config = yaml.safe_load(f)
-    return config["solar_term_prompt"]
-
-
-def build_prompt(term: dict) -> str:
-    """用节气信息填充 prompt 模板"""
-    template = load_prompt()
-    customs_text = "、".join(term["customs"][:4])
-
-    return template.format(
-        name=term["name"],
-        date=term["date"],
-        season=term["season"],
-        meaning=term["meaning"],
-        description=term["description"],
-        customs=customs_text,
-        food=term["food"],
-        health_tip=term["health_tip"],
-    )
 
 
 # ── 小红书笔记内容 ──

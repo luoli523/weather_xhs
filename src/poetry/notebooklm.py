@@ -1,6 +1,6 @@
-"""节气 NotebookLM Pipeline
+"""诗词 NotebookLM Pipeline
 
-上传节气 Markdown → 生成节气 infographic → 下载图片。
+上传诗词 Markdown → 用 GPT 生成的 prompt 生成 infographic → 下载图片。
 """
 
 from pathlib import Path
@@ -16,27 +16,27 @@ async def run_pipeline(
     artifact_name: str,
     output_dir: str,
 ) -> str | None:
-    """节气 NotebookLM pipeline：上传节气 Markdown → 生成 infographic → 下载
+    """诗词 NotebookLM pipeline：上传诗词 Markdown → 生成 infographic → 下载
 
     Args:
-        md_file: 节气 Markdown 文件路径
-        prompt: 节气 infographic 生成 prompt
-        artifact_name: 生成物命名（如 "立春_2026-02-04"）
+        md_file: 诗词 Markdown 文件路径
+        prompt: GPT 动态生成的 infographic prompt
+        artifact_name: 生成物命名（如 "诗词_中秋节_2026-09-27"）
         output_dir: 输出目录
 
     Returns:
         生成的图片文件路径，失败返回 None
     """
-    print("\n🌿 节气 NotebookLM Pipeline 开始")
+    print("\n📜 诗词 NotebookLM Pipeline 开始")
 
     async with await NotebookLMClient.from_storage() as client:
         print("\n[1/3] 查找 notebook...")
         notebook_id = await find_or_create_notebook(client)
 
-        print("\n[2/3] 上传节气 source...")
+        print("\n[2/3] 上传诗词 source...")
         source_id = await upload_source(client, notebook_id, md_file)
 
-        print("\n[3/3] 生成节气 infographic...")
+        print("\n[3/3] 生成诗词 infographic...")
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
 
@@ -44,7 +44,7 @@ async def run_pipeline(
             client, notebook_id, source_id, prompt,
         )
         if not status:
-            print("    ❌ 节气 infographic 创建失败")
+            print("    ❌ 诗词 infographic 创建失败")
             return None
 
         print(f"    等待生成完成 (task_id={status.task_id[:8]}...)...")
@@ -61,5 +61,5 @@ async def run_pipeline(
         )
         print(f"    已下载: {out_file}")
 
-        print("\n🌿 节气 NotebookLM Pipeline 完成")
+        print("\n📜 诗词 NotebookLM Pipeline 完成")
         return out_file

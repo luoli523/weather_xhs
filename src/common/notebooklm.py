@@ -1,9 +1,10 @@
 """NotebookLM 共享基础功能
 
-提供 notebook 查找/创建、source 上传等通用操作，
-供 clothing 和 solar_term 模块复用。
+提供 notebook 查找/创建、source 上传、infographic 创建（含重试）等通用操作，
+供 clothing、solar_term 和 poetry 模块复用。
 """
 
+import asyncio
 from pathlib import Path
 
 from notebooklm import NotebookLMClient, InfographicOrientation, InfographicDetail
@@ -44,3 +45,38 @@ async def upload_source(client: NotebookLMClient, notebook_id: str, md_file: str
     source = await client.sources.add_file(notebook_id, str(file_path), wait=True)
     print(f"  上传完成: source_id={source.id[:8]}... title={source.title}")
     return source.id
+
+
+async def create_infographic_with_retry(
+    client: NotebookLMClient,
+    notebook_id: str,
+    source_id: str,
+    prompt: str,
+    max_retries: int = 3,
+):
+    """创建 infographic，带重试逻辑。
+
+    Returns:
+        status 对象（含 task_id），全部失败返回 None
+    """
+    for attempt in range(max_retries):
+        try:
+            status = await client.artifacts.generate_infographic(
+                notebook_id,
+                source_ids=[source_id],
+                instructions=prompt,
+                orientation=InfographicOrientation.PORTRAIT,
+                detail_level=InfographicDetail.DETAILED,
+                language="zh",
+            )
+            if status and hasattr(status, "task_id") and status.task_id and len(status.task_id) > 5:
+                return status
+        except Exception as e:
+            print(f"    ⚠ 生成请求失败 (第{attempt+1}次): {e}")
+
+        if attempt < max_retries - 1:
+            wait_sec = 10 * (attempt + 1)
+            print(f"    ⏳ 等待 {wait_sec}s 后重试...")
+            await asyncio.sleep(wait_sec)
+
+    return None
