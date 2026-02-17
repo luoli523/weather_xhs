@@ -2,9 +2,9 @@
 
 主流程：读取配置 → 获取天气 → 生成穿衣指数 → 输出 Markdown
      → 上传 NotebookLM → 用 NotebookLM 内置 infographic 工具按城市生成穿搭图片
-     → 推送 Telegram → 发布小红书 → 发布 Instagram
-     → 节气检测 → 节气 infographic → 推送 Telegram → 发布小红书 → 发布 Instagram
-     → 诗词检测（GPT）→ 诗词 infographic → 推送 Telegram → 发布小红书 → 发布 Instagram
+     → 推送 Telegram → 发布 Instagram
+     → 节气检测 → 节气 infographic → 推送 Telegram → 发布 Instagram
+     → 诗词检测（GPT）→ 诗词 infographic → 推送 Telegram → 发布 Instagram
 """
 
 import asyncio
@@ -24,12 +24,10 @@ from src.clothing.index import generate_clothing_advice
 from src.clothing.content import generate_markdown, save_markdown
 from src.clothing.telegram import send_images as telegram_send_images
 from src.clothing.telegram import send_images_simple as telegram_send_simple
-from src.clothing.xhs import publish_images as xhs_publish_images
 from src.clothing.instagram import publish_images as ig_publish_images
 
 # ── 共享模块 ──
 from src.common.telegram import send_photo as telegram_send_photo, send_message as telegram_send_message, get_telegram_config
-from src.common.xhs import get_xhs_config, publish_note
 from src.common.instagram import get_ig_config, publish_album as ig_publish_album
 from src.common.notebooklm import check_auth as check_nlm_auth
 
@@ -38,7 +36,6 @@ from src.solar_term.detector import get_solar_term
 from src.solar_term.content import (
     generate_markdown as solar_term_generate_markdown,
     save_markdown as solar_term_save_markdown,
-    build_xhs_content as solar_term_build_xhs_content,
     build_telegram_caption as solar_term_build_telegram_caption,
     build_ig_caption as solar_term_build_ig_caption,
 )
@@ -48,7 +45,6 @@ from src.poetry.detector import get_poem
 from src.poetry.content import (
     generate_markdown as poetry_generate_markdown,
     save_markdown as poetry_save_markdown,
-    build_xhs_content as poetry_build_xhs_content,
     build_telegram_caption as poetry_build_telegram_caption,
     build_ig_caption as poetry_build_ig_caption,
 )
@@ -64,7 +60,6 @@ def parse_args() -> argparse.Namespace:
         default="female",
         help="指定人物性别 (female=女性, male=男性, neutral=中性, random=随机)，默认 female",
     )
-    parser.add_argument("--no-xhs", action="store_true", help="跳过小红书发布")
     parser.add_argument("--no-ig", action="store_true", help="跳过 Instagram 发布")
     parser.add_argument("--no-poetry", action="store_true", help="跳过诗词模块（不调用 GPT）")
     parser.add_argument(
@@ -192,30 +187,7 @@ async def _run_solar_term_pipeline(
     else:
         print("  ⏭ Telegram 未配置，跳过节气推送")
 
-    # 8d. 小红书发布节气笔记
-    if hasattr(args, "no_xhs") and args.no_xhs:
-        print("  ⏭ 跳过小红书（--no-xhs）")
-    else:
-        xhs_config = get_xhs_config()
-        if xhs_config:
-            title, content, tags = solar_term_build_xhs_content(solar_term)
-            print(f"  📕 发布节气笔记到小红书...")
-            print(f"    标题: {title}")
-            success = await publish_note(
-                image_files=[solar_image],
-                title=title,
-                content=content,
-                tags=tags,
-                storage_state_path=xhs_config["storage_state_path"],
-            )
-            if success:
-                print(f"  ✅ 节气笔记已发布到小红书")
-            else:
-                print(f"  ⚠ 节气笔记小红书发布失败")
-        else:
-            print("  ⏭ 小红书未配置，跳过节气发布")
-
-    # 8e. Instagram 发布节气帖子
+    # 8d. Instagram 发布节气帖子
     if hasattr(args, "no_ig") and args.no_ig:
         print("  ⏭ 跳过 Instagram（--no-ig）")
     else:
@@ -302,30 +274,7 @@ async def _run_poetry_pipeline(
     else:
         print("  ⏭ Telegram 未配置，跳过诗词推送")
 
-    # 9d. 小红书发布诗词笔记
-    if hasattr(args, "no_xhs") and args.no_xhs:
-        print("  ⏭ 跳过小红书（--no-xhs）")
-    else:
-        xhs_config = get_xhs_config()
-        if xhs_config:
-            title, content, tags = poetry_build_xhs_content(poem)
-            print(f"  📕 发布诗词笔记到小红书...")
-            print(f"    标题: {title}")
-            success = await publish_note(
-                image_files=[poetry_image],
-                title=title,
-                content=content,
-                tags=tags,
-                storage_state_path=xhs_config["storage_state_path"],
-            )
-            if success:
-                print(f"  ✅ 诗词笔记已发布到小红书")
-            else:
-                print(f"  ⚠ 诗词笔记小红书发布失败")
-        else:
-            print("  ⏭ 小红书未配置，跳过诗词发布")
-
-    # 9e. Instagram 发布诗词帖子
+    # 9d. Instagram 发布诗词帖子
     if hasattr(args, "no_ig") and args.no_ig:
         print("  ⏭ 跳过 Instagram（--no-ig）")
     else:
@@ -482,13 +431,7 @@ async def main():
             # 6. 推送到 Telegram
             await telegram_send_images(image_files, advices, date=today)
 
-            # 7. 发布到小红书
-            if args.no_xhs:
-                print("\n⏭ 跳过小红书（--no-xhs）")
-            else:
-                await xhs_publish_images(image_files, advices, date=today)
-
-            # 7b. 发布到 Instagram
+            # 7. 发布到 Instagram
             if args.no_ig:
                 print("\n⏭ 跳过 Instagram（--no-ig）")
             else:
