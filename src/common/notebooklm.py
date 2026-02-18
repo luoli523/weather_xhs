@@ -88,8 +88,11 @@ async def create_infographic_with_retry(
             )
             if status and hasattr(status, "task_id") and status.task_id and len(status.task_id) > 5:
                 return status
+            print(f"    ⚠ 返回无效 status (第{attempt+1}次): {status}")
         except Exception as e:
-            print(f"    ⚠ 生成请求失败 (第{attempt+1}次): {e}")
+            err_type = type(e).__name__
+            err_cause = f" <- {type(e.__cause__).__name__}: {e.__cause__}" if e.__cause__ else ""
+            print(f"    ⚠ 生成请求失败 (第{attempt+1}次): [{err_type}] {e}{err_cause}")
 
         if attempt < max_retries - 1:
             wait_sec = 10 * (attempt + 1)

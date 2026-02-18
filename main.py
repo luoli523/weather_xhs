@@ -438,6 +438,10 @@ async def main():
                 await ig_publish_images(image_files, advices, date=today)
 
     # ── 8. 节气检测与专属内容生成 ──
+    if not skip_notebooklm:
+        print("\n⏳ 等待 30s 后继续（避免 NotebookLM 限流）...")
+        await asyncio.sleep(30)
+
     solar_term = await get_solar_term(today)
     if solar_term:
         print(f"\n🌿 今日节气：{solar_term['name']}！启动节气内容生成流程...")
@@ -446,6 +450,10 @@ async def main():
         print(f"\n🌿 今日非节气日，跳过节气内容生成")
 
     # ── 9. 诗词检测（GPT 动态匹配）与专属内容生成 ──
+    if solar_term and not skip_notebooklm:
+        print("\n⏳ 等待 30s 后继续（避免 NotebookLM 限流）...")
+        await asyncio.sleep(30)
+
     if args.no_poetry:
         print(f"\n📜 跳过诗词模块（--no-poetry）")
     else:

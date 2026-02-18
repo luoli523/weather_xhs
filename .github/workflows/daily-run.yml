@@ -27,6 +27,9 @@ jobs:
           pip install -r requirements.txt
           playwright install chromium
 
+      - name: Run tests
+        run: python -m pytest tests/ -v --tb=short
+
       - name: Restore NotebookLM auth
         run: |
           mkdir -p ~/.notebooklm

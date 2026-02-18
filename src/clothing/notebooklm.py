@@ -4,12 +4,15 @@
 如果 OPENAI_API_KEY 未配置，回退到内置的基础 prompt。
 """
 
+import asyncio
 import os
 from pathlib import Path
 
 from notebooklm import NotebookLMClient
 
 from src.common.notebooklm import find_or_create_notebook, upload_source, create_infographic_with_retry
+
+INFOGRAPHIC_INTERVAL = 30  # 每张 infographic 之间的间隔（秒），避免触发 NotebookLM 限流
 from .index import ClothingAdvice
 
 
@@ -185,6 +188,10 @@ async def generate_city_infographics(
         )
         downloaded_files.append(out_file)
         print(f"    已下载: {out_file}")
+
+        if i < len(advices) - 1:
+            print(f"    ⏳ 等待 {INFOGRAPHIC_INTERVAL}s 后生成下一张...")
+            await asyncio.sleep(INFOGRAPHIC_INTERVAL)
 
     return downloaded_files
 
