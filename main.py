@@ -36,7 +36,6 @@ from src.solar_term.detector import get_solar_term
 from src.solar_term.content import (
     generate_markdown as solar_term_generate_markdown,
     save_markdown as solar_term_save_markdown,
-    build_telegram_caption as solar_term_build_telegram_caption,
     build_ig_caption as solar_term_build_ig_caption,
 )
 
@@ -45,7 +44,6 @@ from src.poetry.detector import get_poem
 from src.poetry.content import (
     generate_markdown as poetry_generate_markdown,
     save_markdown as poetry_save_markdown,
-    build_telegram_caption as poetry_build_telegram_caption,
     build_ig_caption as poetry_build_ig_caption,
 )
 
@@ -173,15 +171,16 @@ async def _run_solar_term_pipeline(
 
     print(f"  🎨 节气图片: {solar_image}")
 
-    # 8c. Telegram 发送节气图片
+    # 8c. Telegram 发送节气图片 + 完整文案
     tg_config = get_telegram_config()
     if tg_config:
         bot_token, chat_id = tg_config
-        caption = solar_term_build_telegram_caption(solar_term)
         print(f"  📱 推送节气图片到 Telegram...")
-        ok = await telegram_send_photo(bot_token, chat_id, solar_image, caption=caption)
+        ok = await telegram_send_photo(bot_token, chat_id, solar_image, caption="")
         if ok:
-            print(f"  ✅ 节气图片已推送到 Telegram")
+            full_caption = solar_term_build_ig_caption(solar_term)
+            await telegram_send_message(bot_token, chat_id, full_caption, parse_mode="")
+            print(f"  ✅ 节气图片及完整文案已推送到 Telegram")
         else:
             print(f"  ⚠ 节气图片 Telegram 推送失败")
     else:
@@ -260,15 +259,16 @@ async def _run_poetry_pipeline(
 
     print(f"  🎨 诗词图片: {poetry_image}")
 
-    # 9c. Telegram 发送诗词图片
+    # 9c. Telegram 发送诗词图片 + 完整文案
     tg_config = get_telegram_config()
     if tg_config:
         bot_token, chat_id = tg_config
-        caption = poetry_build_telegram_caption(poem)
         print(f"  📱 推送诗词图片到 Telegram...")
-        ok = await telegram_send_photo(bot_token, chat_id, poetry_image, caption=caption)
+        ok = await telegram_send_photo(bot_token, chat_id, poetry_image, caption="")
         if ok:
-            print(f"  ✅ 诗词图片已推送到 Telegram")
+            full_caption = poetry_build_ig_caption(poem)
+            await telegram_send_message(bot_token, chat_id, full_caption, parse_mode="")
+            print(f"  ✅ 诗词图片及完整文案已推送到 Telegram")
         else:
             print(f"  ⚠ 诗词图片 Telegram 推送失败")
     else:

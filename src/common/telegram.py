@@ -33,19 +33,23 @@ async def send_message(
     bot_token: str,
     chat_id: str,
     text: str,
+    parse_mode: str = "HTML",
 ) -> bool:
     """发送纯文本消息到 Telegram
+
+    Args:
+        parse_mode: "HTML", "Markdown", 或 "" (不解析)
 
     Returns:
         True 发送成功，False 发送失败
     """
     url = f"{TELEGRAM_API}/bot{bot_token}/sendMessage"
+    payload: dict = {"chat_id": chat_id, "text": text}
+    if parse_mode:
+        payload["parse_mode"] = parse_mode
 
     async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(
-            url,
-            data={"chat_id": chat_id, "text": text, "parse_mode": "HTML"},
-        )
+        resp = await client.post(url, data=payload)
 
     if resp.status_code == 200 and resp.json().get("ok"):
         return True

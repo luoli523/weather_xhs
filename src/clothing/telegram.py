@@ -6,7 +6,8 @@
 
 from pathlib import Path
 
-from src.common.telegram import get_telegram_config, send_media_group
+from src.common.telegram import get_telegram_config, send_media_group, send_message
+from src.clothing.instagram import build_ig_caption
 
 
 async def send_images(
@@ -14,7 +15,9 @@ async def send_images(
     advices: list,
     date: str,
 ) -> int:
-    """以相册形式发送穿搭图片到 Telegram（一条消息包含所有城市）
+    """以相册形式发送穿搭图片到 Telegram，并附带完整文案。
+
+    先发送图片相册，再单独发送一条完整文案消息（与 IG 一致），方便直接复制。
 
     Args:
         image_files: 图片文件路径列表
@@ -34,19 +37,16 @@ async def send_images(
 
     photos = []
     for img_path, advice in zip(image_files, advices):
-        caption = (
-            f"<b>{advice.city_name} {date} 穿搭指南</b>\n"
-            f"🌡 {advice.temp_range}（体感 {advice.feels_like}）\n"
-            f"🌤 {advice.weather_desc}\n"
-            f"👔 {advice.clothing_category}：{advice.outfit_suggestion}"
-        )
-        photos.append({"path": img_path, "caption": caption})
+        photos.append({"path": img_path, "caption": ""})
         print(f"  📷 {advice.city_name}")
 
     ok = await send_media_group(bot_token, chat_id, photos)
     if ok:
         count = len(image_files)
         print(f"📱 Telegram 推送完成：{count} 张（相册）")
+        full_caption = build_ig_caption(advices, date_str=date)
+        await send_message(bot_token, chat_id, full_caption, parse_mode="")
+        print(f"📱 Telegram 完整文案已发送")
         return count
     else:
         print("📱 Telegram 推送失败")
