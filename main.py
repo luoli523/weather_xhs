@@ -3,8 +3,6 @@
 主流程：读取配置 → 获取天气 → 生成穿衣指数 → 输出 Markdown
      → 上传 NotebookLM → 用 NotebookLM 内置 infographic 工具按城市生成穿搭图片
      → 推送 Telegram → 发布 Instagram
-     → 节气检测 → 节气 infographic → 推送 Telegram → 发布 Instagram
-     → 诗词检测（GPT）→ 诗词 infographic → 推送 Telegram → 发布 Instagram
 """
 
 import asyncio
@@ -27,25 +25,8 @@ from src.clothing.telegram import send_images_simple as telegram_send_simple
 from src.clothing.instagram import publish_images as ig_publish_images
 
 # ── 共享模块 ──
-from src.common.telegram import send_photo as telegram_send_photo, send_message as telegram_send_message, get_telegram_config
-from src.common.instagram import get_ig_config, publish_album as ig_publish_album
+from src.common.telegram import send_message as telegram_send_message, get_telegram_config
 from src.common.notebooklm import check_auth as check_nlm_auth
-
-# ── 节气模块 ──
-from src.solar_term.detector import get_solar_term
-from src.solar_term.content import (
-    generate_markdown as solar_term_generate_markdown,
-    save_markdown as solar_term_save_markdown,
-    build_ig_caption as solar_term_build_ig_caption,
-)
-
-# ── 诗词模块 ──
-from src.poetry.detector import get_poem
-from src.poetry.content import (
-    generate_markdown as poetry_generate_markdown,
-    save_markdown as poetry_save_markdown,
-    build_ig_caption as poetry_build_ig_caption,
-)
 
 
 def parse_args() -> argparse.Namespace:
@@ -59,7 +40,6 @@ def parse_args() -> argparse.Namespace:
         help="指定人物性别 (female=女性, male=男性, neutral=中性, random=随机)，默认 female",
     )
     parser.add_argument("--no-ig", action="store_true", help="跳过 Instagram 发布")
-    parser.add_argument("--no-poetry", action="store_true", help="跳过诗词模块（不调用 GPT）")
     parser.add_argument(
         "--send-telegram",
         action="store_true",
@@ -119,180 +99,6 @@ async def fetch_all_weather(config: dict, use_mock: bool = False) -> list:
             city_weathers.append(result)
 
     return city_weathers
-
-
-# ── 节气专属流程 ──
-
-
-async def _run_solar_term_pipeline(
-    solar_term: dict,
-    today: str,
-    output_dir: Path,
-    skip_notebooklm: bool,
-    args: argparse.Namespace,
-):
-    """节气专属流程：生成 Markdown → NotebookLM infographic → Telegram → 小红书"""
-
-    # 8a. 生成节气 Markdown
-    md_content = solar_term_generate_markdown(solar_term)
-    md_file = output_dir / f"solar_term_{solar_term['name']}_{today}.md"
-    solar_term_save_markdown(md_content, str(md_file))
-    print(f"  📄 节气 Markdown: {md_file}")
-
-    if skip_notebooklm:
-        print("  ⏭ 跳过 NotebookLM（--no-nlm）")
-        return
-
-    # 8b. NotebookLM 生成节气 infographic
-    try:
-        from src.solar_term.notebooklm import run_pipeline as solar_term_run_pipeline
-    except ImportError as e:
-        print(f"  ❌ NotebookLM 依赖未安装: {e}")
-        return
-
-    # 使用 GPT 动态生成的 infographic prompt
-    prompt = solar_term.get("infographic_prompt", "")
-    if not prompt:
-        print("  ⚠ GPT 未返回节气 infographic prompt，跳过 infographic 生成")
-        return
-
-    artifact_name = f"{solar_term['name']}_{today}"
-
-    solar_image = await solar_term_run_pipeline(
-        md_file=str(md_file),
-        prompt=prompt,
-        artifact_name=artifact_name,
-        output_dir=str(output_dir),
-    )
-
-    if not solar_image:
-        print("  ❌ 节气 infographic 生成失败")
-        return
-
-    print(f"  🎨 节气图片: {solar_image}")
-
-    # 8c. Telegram 发送节气图片 + 完整文案
-    tg_config = get_telegram_config()
-    if tg_config:
-        bot_token, chat_id = tg_config
-        print(f"  📱 推送节气图片到 Telegram...")
-        ok = await telegram_send_photo(bot_token, chat_id, solar_image, caption="")
-        if ok:
-            full_caption = solar_term_build_ig_caption(solar_term)
-            await telegram_send_message(bot_token, chat_id, full_caption, parse_mode="")
-            print(f"  ✅ 节气图片及完整文案已推送到 Telegram")
-        else:
-            print(f"  ⚠ 节气图片 Telegram 推送失败")
-    else:
-        print("  ⏭ Telegram 未配置，跳过节气推送")
-
-    # 8d. Instagram 发布节气帖子
-    if hasattr(args, "no_ig") and args.no_ig:
-        print("  ⏭ 跳过 Instagram（--no-ig）")
-    else:
-        ig_config = get_ig_config()
-        if ig_config:
-            caption = solar_term_build_ig_caption(solar_term)
-            print(f"  📷 发布节气帖子到 Instagram...")
-            success = await ig_publish_album(
-                image_files=[solar_image],
-                caption=caption,
-                config=ig_config,
-            )
-            if success:
-                print(f"  ✅ 节气帖子已发布到 Instagram")
-            else:
-                print(f"  ⚠ 节气帖子 Instagram 发布失败")
-        else:
-            print("  ⏭ Instagram 未配置，跳过节气发布")
-
-
-# ── 诗词专属流程 ──
-
-
-async def _run_poetry_pipeline(
-    poem: dict,
-    today: str,
-    output_dir: Path,
-    skip_notebooklm: bool,
-    args: argparse.Namespace,
-):
-    """诗词专属流程：生成 Markdown → NotebookLM infographic → Telegram → 小红书 → Instagram"""
-
-    occasion = poem.get("occasion", "诗词")
-
-    # 9a. 生成诗词 Markdown
-    md_content = poetry_generate_markdown(poem)
-    md_file = output_dir / f"poetry_{occasion}_{today}.md"
-    poetry_save_markdown(md_content, str(md_file))
-    print(f"  📄 诗词 Markdown: {md_file}")
-
-    if skip_notebooklm:
-        print("  ⏭ 跳过 NotebookLM（--no-nlm）")
-        return
-
-    # 9b. NotebookLM 生成诗词 infographic
-    try:
-        from src.poetry.notebooklm import run_pipeline as poetry_run_pipeline
-    except ImportError as e:
-        print(f"  ❌ NotebookLM 依赖未安装: {e}")
-        return
-
-    # 使用 GPT 动态生成的 infographic prompt
-    prompt = poem.get("infographic_prompt", "")
-    if not prompt:
-        print("  ⚠ GPT 未返回 infographic prompt，跳过")
-        return
-
-    artifact_name = f"诗词_{occasion}_{today}"
-
-    poetry_image = await poetry_run_pipeline(
-        md_file=str(md_file),
-        prompt=prompt,
-        artifact_name=artifact_name,
-        output_dir=str(output_dir),
-    )
-
-    if not poetry_image:
-        print("  ❌ 诗词 infographic 生成失败")
-        return
-
-    print(f"  🎨 诗词图片: {poetry_image}")
-
-    # 9c. Telegram 发送诗词图片 + 完整文案
-    tg_config = get_telegram_config()
-    if tg_config:
-        bot_token, chat_id = tg_config
-        print(f"  📱 推送诗词图片到 Telegram...")
-        ok = await telegram_send_photo(bot_token, chat_id, poetry_image, caption="")
-        if ok:
-            full_caption = poetry_build_ig_caption(poem)
-            await telegram_send_message(bot_token, chat_id, full_caption, parse_mode="")
-            print(f"  ✅ 诗词图片及完整文案已推送到 Telegram")
-        else:
-            print(f"  ⚠ 诗词图片 Telegram 推送失败")
-    else:
-        print("  ⏭ Telegram 未配置，跳过诗词推送")
-
-    # 9d. Instagram 发布诗词帖子
-    if hasattr(args, "no_ig") and args.no_ig:
-        print("  ⏭ 跳过 Instagram（--no-ig）")
-    else:
-        ig_config = get_ig_config()
-        if ig_config:
-            caption = poetry_build_ig_caption(poem)
-            print(f"  📷 发布诗词帖子到 Instagram...")
-            success = await ig_publish_album(
-                image_files=[poetry_image],
-                caption=caption,
-                config=ig_config,
-            )
-            if success:
-                print(f"  ✅ 诗词帖子已发布到 Instagram")
-            else:
-                print(f"  ⚠ 诗词帖子 Instagram 发布失败")
-        else:
-            print("  ⏭ Instagram 未配置，跳过诗词发布")
 
 
 # ── 主流程 ──
@@ -395,7 +201,7 @@ async def main():
         nlm_auth_ok = await check_nlm_auth()
         if not nlm_auth_ok:
             print("❌ NotebookLM 认证失效，跳过所有 infographic 生成")
-            skip_notebooklm = True  # 后续节气/诗词模块也跳过 NotebookLM
+            skip_notebooklm = True
             tg_config = get_telegram_config()
             if tg_config:
                 bot_token, chat_id = tg_config
@@ -436,34 +242,6 @@ async def main():
                 print("\n⏭ 跳过 Instagram（--no-ig）")
             else:
                 await ig_publish_images(image_files, advices, date=today)
-
-    # ── 8. 节气检测与专属内容生成 ──
-    if not skip_notebooklm:
-        print("\n⏳ 等待 30s 后继续（避免 NotebookLM 限流）...")
-        await asyncio.sleep(30)
-
-    solar_term = await get_solar_term(today)
-    if solar_term:
-        print(f"\n🌿 今日节气：{solar_term['name']}！启动节气内容生成流程...")
-        await _run_solar_term_pipeline(solar_term, today, output_dir, skip_notebooklm, args)
-    else:
-        print(f"\n🌿 今日非节气日，跳过节气内容生成")
-
-    # ── 9. 诗词检测（GPT 动态匹配）与专属内容生成 ──
-    if solar_term and not skip_notebooklm:
-        print("\n⏳ 等待 30s 后继续（避免 NotebookLM 限流）...")
-        await asyncio.sleep(30)
-
-    if args.no_poetry:
-        print(f"\n📜 跳过诗词模块（--no-poetry）")
-    else:
-        print(f"\n📜 正在调用 GPT 检测今日诗词...")
-        poem = await get_poem(today)
-        if poem:
-            print(f"📜 今日诗词：《{poem['title']}》（{poem['dynasty']}·{poem['author']}）— {poem.get('occasion', '')}")
-            await _run_poetry_pipeline(poem, today, output_dir, skip_notebooklm, args)
-        else:
-            print(f"📜 今日无匹配诗词，跳过")
 
     print("\n✅ 全部完成！")
 

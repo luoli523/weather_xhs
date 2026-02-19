@@ -35,7 +35,7 @@ class TestPipelineSmoke:
 
     def test_mock_no_nlm(self):
         """Pipeline runs with mock weather + no NotebookLM + no publishing."""
-        result = self._run_main(["--mock", "--no-nlm", "--no-ig", "--no-poetry"])
+        result = self._run_main(["--mock", "--no-nlm", "--no-ig"])
         assert result.returncode == 0, f"STDERR:\n{result.stderr}\nSTDOUT:\n{result.stdout}"
         assert "Mock" in result.stdout or "穿搭" in result.stdout
 
