@@ -11,6 +11,9 @@ jobs:
   generate:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      XHS_STORAGE_STATE: ${{ secrets.XHS_STORAGE_STATE }}
+      IG_SESSION: ${{ secrets.IG_SESSION }}
 
     steps:
       - name: Checkout
@@ -38,20 +41,16 @@ jobs:
           NOTEBOOKLM_STORAGE_STATE: ${{ secrets.NOTEBOOKLM_STORAGE_STATE }}
 
       - name: Restore XHS auth
-        if: ${{ secrets.XHS_STORAGE_STATE != '' }}
+        if: env.XHS_STORAGE_STATE != ''
         run: |
           mkdir -p ~/.xhs
           echo "$XHS_STORAGE_STATE" | base64 -d > ~/.xhs/storage_state.json
-        env:
-          XHS_STORAGE_STATE: ${{ secrets.XHS_STORAGE_STATE }}
 
       - name: Restore Instagram session
-        if: ${{ secrets.IG_SESSION != '' }}
+        if: env.IG_SESSION != ''
         run: |
           mkdir -p ~/.instagram
           echo "$IG_SESSION" | base64 -d > ~/.instagram/session.json
-        env:
-          IG_SESSION: ${{ secrets.IG_SESSION }}
 
       - name: Run pipeline
         env:
