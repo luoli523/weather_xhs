@@ -38,7 +38,7 @@ jobs:
           NOTEBOOKLM_STORAGE_STATE: ${{ secrets.NOTEBOOKLM_STORAGE_STATE }}
 
       - name: Restore XHS auth
-        if: env.XHS_STORAGE_STATE != ''
+        if: ${{ secrets.XHS_STORAGE_STATE != '' }}
         run: |
           mkdir -p ~/.xhs
           echo "$XHS_STORAGE_STATE" | base64 -d > ~/.xhs/storage_state.json
@@ -47,7 +47,7 @@ jobs:
           XHS_STORAGE_STATE: ${{ secrets.XHS_STORAGE_STATE }}
 
       - name: Restore Instagram session
-        if: env.IG_SESSION != ''
+        if: ${{ secrets.IG_SESSION != '' }}
         run: |
           mkdir -p ~/.instagram
           echo "$IG_SESSION" | base64 -d > ~/.instagram/session.json
