@@ -42,7 +42,6 @@ jobs:
         run: |
           mkdir -p ~/.xhs
           echo "$XHS_STORAGE_STATE" | base64 -d > ~/.xhs/storage_state.json
-          echo "XHS_ENABLED=true" >> "$GITHUB_ENV"
         env:
           XHS_STORAGE_STATE: ${{ secrets.XHS_STORAGE_STATE }}
 
@@ -51,7 +50,6 @@ jobs:
         run: |
           mkdir -p ~/.instagram
           echo "$IG_SESSION" | base64 -d > ~/.instagram/session.json
-          echo "IG_ENABLED=true" >> "$GITHUB_ENV"
         env:
           IG_SESSION: ${{ secrets.IG_SESSION }}
 
@@ -59,9 +57,11 @@ jobs:
         env:
           OPENWEATHERMAP_API_KEY: ${{ secrets.OPENWEATHERMAP_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          TELEGRAM_ENABLED: "true"
+          TELEGRAM_ENABLED: ${{ secrets.TELEGRAM_ENABLED }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          XHS_ENABLED: ${{ secrets.XHS_ENABLED }}
+          IG_ENABLED: ${{ secrets.IG_ENABLED }}
           IG_USERNAME: ${{ secrets.IG_USERNAME }}
           IG_PASSWORD: ${{ secrets.IG_PASSWORD }}
         run: python main.py
