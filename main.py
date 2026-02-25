@@ -37,8 +37,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gender",
         choices=["female", "male", "neutral", "random"],
-        default="female",
-        help="指定人物性别 (female=女性, male=男性, neutral=中性, random=随机)，默认 female",
+        default="random",
+        help="指定人物性别 (female=女性, male=男性, neutral=中性, random=随机)，默认 random",
     )
     parser.add_argument("--no-ig", action="store_true", help="跳过 Instagram 发布")
     parser.add_argument(

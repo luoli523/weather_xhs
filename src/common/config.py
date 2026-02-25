@@ -88,11 +88,18 @@ def get_llm_config() -> dict:
     cfg = _load()
     llm_cfg = cfg.get("llm", {})
 
+    # 模型优先级：环境变量 LLM_MODEL > config.yaml llm.model > 厂商默认模型
+    model = (
+        os.getenv("LLM_MODEL", "").strip()
+        or llm_cfg.get("model")
+        or provider_cfg["default_model"]
+    )
+
     return {
         "provider": provider,
         "api_key": api_key,
         "base_url": provider_cfg["base_url"],
-        "model": llm_cfg.get("model") or provider_cfg["default_model"],
+        "model": model,
         "max_completion_tokens": llm_cfg.get("max_completion_tokens", 16000),
     }
 
