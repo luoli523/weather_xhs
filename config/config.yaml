@@ -7,12 +7,27 @@ cities:
     location_id: "31.23,121.47"
   - name: 深圳
     location_id: "22.54,114.06"
+  - name: 成都
+    location_id: "30.57,104.07"
+  - name: 西安
+    location_id: "34.26,108.94"
+  - name: 厦门
+    location_id: "24.48,118.09"
+  - name: 哈尔滨
+    location_id: "45.75,126.65"
+  - name: 拉萨
+    location_id: "29.65,91.13"
+  - name: 丽江
+    location_id: "26.87,100.22"
   - name: 新加坡
     location_id: "1.35,103.82"
   - name: 大理
     location_id: "25.59,100.23"
   - name: 长沙
     location_id: "28.23,112.94"
+
+# 每次生成信息图的城市数量（从上述城市中随机选取）
+infographic_count: 2
 
 # OpenWeatherMap API 配置
 # 免费版: 每天 1000 次调用

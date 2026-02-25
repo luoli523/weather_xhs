@@ -8,6 +8,7 @@
 import asyncio
 import argparse
 import os
+import random
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -192,11 +193,20 @@ async def main():
     save_markdown(markdown_content, str(output_file))
     print(f"\n📄 Markdown 文件已生成: {output_file}")
 
-    # 5. NotebookLM: 上传 → 生成 infographic → 下载
+    # 5. 随机选取城市生成信息图
+    infographic_count = config.get("infographic_count", 2)
+    if len(advices) > infographic_count:
+        selected_advices = random.sample(advices, infographic_count)
+        print(f"\n🎲 从 {len(advices)} 个城市中随机选取 {infographic_count} 个生成信息图: "
+              f"{', '.join(a.city_name for a in selected_advices)}")
+    else:
+        selected_advices = advices
+
+    # 6. NotebookLM: 上传 → 生成 infographic → 下载
     if skip_notebooklm:
         print("\n⏭ 跳过 NotebookLM（--no-nlm）")
     else:
-        # 5a. 先检测 NotebookLM 认证是否有效
+        # 6a. 先检测 NotebookLM 认证是否有效
         print("\n🔑 检测 NotebookLM 认证...")
         nlm_auth_ok = await check_nlm_auth()
         if not nlm_auth_ok:
@@ -226,7 +236,7 @@ async def main():
 
             image_files = await clothing_run_pipeline(
                 md_file=str(output_file),
-                advices=advices,
+                advices=selected_advices,
                 output_dir=str(output_dir),
                 gender=gender,
             )
@@ -234,14 +244,14 @@ async def main():
             for f in image_files:
                 print(f"  {f}")
 
-            # 6. 推送到 Telegram
-            await telegram_send_images(image_files, advices, date=today)
+            # 7. 推送到 Telegram
+            await telegram_send_images(image_files, selected_advices, date=today)
 
-            # 7. 发布到 Instagram
+            # 8. 发布到 Instagram
             if args.no_ig:
                 print("\n⏭ 跳过 Instagram（--no-ig）")
             else:
-                await ig_publish_images(image_files, advices, date=today)
+                await ig_publish_images(image_files, selected_advices, date=today)
 
     print("\n✅ 全部完成！")
 

@@ -15,6 +15,14 @@ _MOCK_DATA = {
     "广州": {"temp": 18, "high": 22, "low": 15, "text": "多云", "night": "多云", "humidity": 72, "wind": "东南风"},
     "深圳": {"temp": 19, "high": 23, "low": 16, "text": "阴", "night": "小雨", "humidity": 78, "wind": "南风"},
     "成都": {"temp": 10, "high": 13, "low": 6, "text": "阴", "night": "阴", "humidity": 80, "wind": "北风"},
+    "西安": {"temp": 3, "high": 8, "low": -2, "text": "晴", "night": "多云", "humidity": 40, "wind": "东北风"},
+    "厦门": {"temp": 16, "high": 20, "low": 13, "text": "多云", "night": "晴", "humidity": 70, "wind": "东南风"},
+    "哈尔滨": {"temp": -15, "high": -8, "low": -22, "text": "晴", "night": "晴", "humidity": 50, "wind": "西北风"},
+    "拉萨": {"temp": 1, "high": 10, "low": -6, "text": "晴", "night": "晴", "humidity": 20, "wind": "西风"},
+    "丽江": {"temp": 12, "high": 18, "low": 4, "text": "晴", "night": "晴", "humidity": 35, "wind": "西南风"},
+    "新加坡": {"temp": 30, "high": 33, "low": 26, "text": "多云", "night": "雷阵雨", "humidity": 82, "wind": "南风"},
+    "大理": {"temp": 14, "high": 20, "low": 6, "text": "晴", "night": "多云", "humidity": 38, "wind": "西南风"},
+    "长沙": {"temp": 8, "high": 12, "low": 4, "text": "阴", "night": "小雨", "humidity": 75, "wind": "北风"},
 }
 
 _DEFAULT = {"temp": 12, "high": 16, "low": 8, "text": "多云", "night": "晴", "humidity": 55, "wind": "东风"}
