@@ -144,12 +144,15 @@ async def main():
     if gender:
         print(f"👤 人物性别：{gender}\n")
 
-    # 0. 检查 OPENAI_API_KEY（GPT 动态生成 prompt 的必要条件）
+    # 0. 检查 LLM API Key（GPT 动态生成 prompt 的必要条件）
     load_dotenv()
     today = datetime.now().strftime("%Y-%m-%d")
 
-    if not os.getenv("OPENAI_API_KEY", "").strip():
-        print("⚠ OPENAI_API_KEY 未配置，跳过当日全部生成流程")
+    from src.common.config import get_llm_config, get_llm_provider
+    llm = get_llm_config()
+    provider = get_llm_provider()
+    if not llm["api_key"]:
+        print(f"⚠ LLM API Key 未配置（厂商: {provider}），跳过当日全部生成流程")
         tg_config = get_telegram_config()
         if tg_config:
             bot_token, chat_id = tg_config
@@ -157,13 +160,14 @@ async def main():
                 bot_token, chat_id,
                 f"⚠️ <b>当日未执行通知</b>\n\n"
                 f"📅 日期：{today}\n"
-                f"❌ 原因：OPENAI_API_KEY 未配置\n"
+                f"❌ 原因：LLM API Key 未配置（厂商: {provider}）\n"
                 f"💡 请在 .env 或 GitHub Secrets 中配置后重试",
             )
             print("📱 已通过 Telegram 发送未执行通知")
         else:
             print("⚠ Telegram 也未配置，无法发送通知")
         return
+    print(f"🤖 LLM 厂商: {provider} | 模型: {llm['model']}")
 
     # 1. 加载配置
     config = load_config(require_api_key=not use_mock)

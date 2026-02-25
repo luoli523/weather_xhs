@@ -1,7 +1,7 @@
 """穿搭 NotebookLM Pipeline
 
 按城市生成穿搭 infographic：调用 GPT 动态生成 prompt → 逐城市生成 → 下载图片。
-如果 OPENAI_API_KEY 未配置，回退到内置的基础 prompt。
+如果 LLM API Key 未配置，回退到内置的基础 prompt。
 """
 
 import asyncio
@@ -66,8 +66,9 @@ async def generate_city_prompt_via_gpt(
     Returns:
         完整的 prompt 文本，失败返回 None
     """
-    api_key = os.getenv("OPENAI_API_KEY", "").strip()
-    if not api_key:
+    from src.common.config import get_llm_config
+    llm = get_llm_config()
+    if not llm["api_key"]:
         return None
 
     tips_text = "\n".join(f"- {t}" for t in advice.extra_tips) if advice.extra_tips else "无"
@@ -87,11 +88,9 @@ async def generate_city_prompt_via_gpt(
 
     try:
         from openai import AsyncOpenAI
-        from src.common.config import get_openai_config
 
-        llm = get_openai_config()
-        client_kwargs = {"api_key": api_key}
-        if llm.get("base_url"):
+        client_kwargs = {"api_key": llm["api_key"]}
+        if llm["base_url"]:
             client_kwargs["base_url"] = llm["base_url"]
         client = AsyncOpenAI(**client_kwargs)
         response = await client.chat.completions.create(

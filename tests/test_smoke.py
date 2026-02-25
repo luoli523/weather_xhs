@@ -18,6 +18,7 @@ class TestPipelineSmoke:
             "PATH": os.environ.get("PATH", ""),
             "PYTHONPATH": ".",
             "HOME": os.environ.get("HOME", "/tmp"),
+            "LLM_PROVIDER": "openai",
             "OPENAI_API_KEY": "test-key-for-smoke",
             "TELEGRAM_ENABLED": "false",
             "IG_ENABLED": "false",
@@ -39,13 +40,13 @@ class TestPipelineSmoke:
         assert result.returncode == 0, f"STDERR:\n{result.stderr}\nSTDOUT:\n{result.stdout}"
         assert "Mock" in result.stdout or "穿搭" in result.stdout
 
-    def test_missing_openai_key_exits_early(self):
-        """Without OPENAI_API_KEY, pipeline should exit early."""
+    def test_missing_llm_key_exits_early(self):
+        """Without LLM API Key, pipeline should exit early."""
         result = self._run_main(
             ["--mock", "--no-nlm", "--no-ig"],
             extra_env={"OPENAI_API_KEY": ""},
         )
-        assert "OPENAI_API_KEY 未配置" in result.stdout
+        assert "LLM API Key 未配置" in result.stdout
 
     def test_help_flag(self):
         result = subprocess.run(
