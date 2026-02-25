@@ -34,12 +34,16 @@ infographic_count: 2
 openweathermap:
   api_key: "${OPENWEATHERMAP_API_KEY}"  # 通过环境变量注入
 
-# OpenAI GPT 配置
+# LLM 配置（兼容 OpenAI API 格式的任意模型/提供商）
 # 穿搭 prompt、节气内容、诗词匹配均使用此配置
+# 支持 OpenAI、DeepSeek、通义千问、Moonshot 等兼容 OpenAI API 的服务
 openai:
+  # base_url: "https://api.deepseek.com"          # DeepSeek
+  # base_url: "https://api.moonshot.cn/v1"         # Moonshot
+  # base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"  # 通义千问
+  # 不设置则默认使用 OpenAI 官方 API
   model: "gpt-5"                    # 模型名称
   max_completion_tokens: 16000       # 最大输出 token 数（含推理 token）
-  # response_format 由各模块按需设置（穿搭=纯文本，节气/诗词=json_object）
 
 # 输出配置
 output:

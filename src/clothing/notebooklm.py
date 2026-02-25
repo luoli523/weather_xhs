@@ -90,7 +90,10 @@ async def generate_city_prompt_via_gpt(
         from src.common.config import get_openai_config
 
         llm = get_openai_config()
-        client = AsyncOpenAI(api_key=api_key)
+        client_kwargs = {"api_key": api_key}
+        if llm.get("base_url"):
+            client_kwargs["base_url"] = llm["base_url"]
+        client = AsyncOpenAI(**client_kwargs)
         response = await client.chat.completions.create(
             model=llm["model"],
             messages=[

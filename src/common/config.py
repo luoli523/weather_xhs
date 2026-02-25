@@ -18,13 +18,19 @@ def _load() -> dict:
 
 
 def get_openai_config() -> dict:
-    """获取完整的 OpenAI 配置，返回包含 model, max_completion_tokens 等字段的字典"""
+    """获取 LLM 配置，返回包含 model, max_completion_tokens, base_url 等字段的字典。
+
+    兼容任何实现了 OpenAI API 格式的提供商（DeepSeek、Moonshot、通义千问等）。
+    """
     cfg = _load()
     openai_cfg = cfg.get("openai", {})
-    return {
+    result = {
         "model": openai_cfg.get("model", "gpt-5"),
         "max_completion_tokens": openai_cfg.get("max_completion_tokens", 16000),
     }
+    if openai_cfg.get("base_url"):
+        result["base_url"] = openai_cfg["base_url"]
+    return result
 
 
 def get_openai_model() -> str:
