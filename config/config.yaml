@@ -27,7 +27,7 @@ cities:
     location_id: "28.23,112.94"
 
 # 每次生成信息图的城市数量（从上述城市中随机选取）
-infographic_count: 2
+infographic_count: 4
 
 # OpenWeatherMap API 配置
 # 免费版: 每天 1000 次调用
