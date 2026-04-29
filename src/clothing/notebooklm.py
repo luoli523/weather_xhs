@@ -32,17 +32,6 @@ VISUAL_STYLES = [
         ),
     },
     {
-        "name": "极简素描时装风",
-        "desc": (
-            "– 极简手绘铅笔/钢笔素描时装风格\n"
-            "– 流畅单色线条，笔触带有速写感和节奏感\n"
-            "– 人物比例夸张拉长（9-10 头身），姿态随性自然\n"
-            "– 服装细节通过线条疏密变化表现材质，无填色或局部淡墨渲染\n"
-            "– 背景极简或无背景，留白大量\n"
-            "– 整体气质：时装周后台草图感，John Galliano 速写风"
-        ),
-    },
-    {
         "name": "中国风水墨插画",
         "desc": (
             "– 中国风水墨时装插画风格\n"
@@ -250,11 +239,17 @@ async def generate_city_infographics(
 
     downloaded_files = []
 
+    # 预先抽取不重复的风格列表，城市数超过风格数时循环补充
+    n = len(advices)
+    styles_pool = random.sample(VISUAL_STYLES, min(n, len(VISUAL_STYLES)))
+    if n > len(VISUAL_STYLES):
+        styles_pool += random.sample(VISUAL_STYLES, n - len(VISUAL_STYLES))
+    assigned_styles = styles_pool[:n]
+
     for i, advice in enumerate(advices):
         print(f"\n  [{i+1}/{len(advices)}] 正在生成 {advice.city_name} 穿搭图...")
 
-        # 每张图随机选取一种视觉风格
-        style = _pick_style()
+        style = assigned_styles[i]
         print(f"    🎨 风格：{style['name']}")
 
         # 尝试 GPT 动态生成 prompt，失败则回退
