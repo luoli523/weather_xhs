@@ -5,11 +5,50 @@
 """
 
 import asyncio
+from collections.abc import Awaitable, Callable
 from pathlib import Path
+from typing import TypeVar
 
+import httpx
 from notebooklm import NotebookLMClient, InfographicOrientation, InfographicDetail
+from notebooklm.exceptions import RPCTimeoutError, SourceAddError
 
 NOTEBOOK_TITLE = "weather_xhs"
+NOTEBOOKLM_RETRY_DELAYS = (10, 30, 60)
+NOTEBOOKLM_TRANSIENT_ERRORS = (
+    RPCTimeoutError,
+    SourceAddError,
+    httpx.TimeoutException,
+    httpx.TransportError,
+    TimeoutError,
+)
+
+T = TypeVar("T")
+
+
+async def retry_notebooklm_operation(
+    operation_name: str,
+    operation: Callable[[], Awaitable[T]],
+    *,
+    attempts: int = 3,
+    delays: tuple[float, ...] = NOTEBOOKLM_RETRY_DELAYS,
+) -> T:
+    """Run a NotebookLM operation with retries for transient service/network errors."""
+    for attempt in range(1, attempts + 1):
+        try:
+            return await operation()
+        except NOTEBOOKLM_TRANSIENT_ERRORS as e:
+            err_type = type(e).__name__
+            if attempt >= attempts:
+                print(f"  ❌ {operation_name} 连续失败 {attempts} 次: [{err_type}] {e}")
+                raise
+
+            wait_sec = delays[min(attempt - 1, len(delays) - 1)]
+            print(f"  ⚠ {operation_name} 失败 (第{attempt}/{attempts}次): [{err_type}] {e}")
+            print(f"  ⏳ 等待 {wait_sec}s 后重试...")
+            await asyncio.sleep(wait_sec)
+
+    raise RuntimeError(f"{operation_name} retry loop ended unexpectedly")
 
 
 async def check_auth() -> bool:
@@ -51,17 +90,20 @@ async def upload_source(client: NotebookLMClient, notebook_id: str, md_file: str
     file_path = Path(md_file)
     file_name = file_path.name
 
-    # 检查是否有同名 source，有则删除
-    existing_sources = await client.sources.list(notebook_id)
-    for src in existing_sources:
-        if src.title == file_name:
-            print(f"  发现同名 source: {file_name}，正在删除旧版本...")
-            await client.sources.delete(notebook_id, src.id)
+    async def _upload_once() -> str:
+        # 每次重试前重新清理同名 source，处理半成功注册留下的残留。
+        existing_sources = await client.sources.list(notebook_id)
+        for src in existing_sources:
+            if src.title == file_name:
+                print(f"  发现同名 source: {file_name}，正在删除旧版本...")
+                await client.sources.delete(notebook_id, src.id)
 
-    print(f"  正在上传: {file_name}")
-    source = await client.sources.add_file(notebook_id, str(file_path), wait=True)
-    print(f"  上传完成: source_id={source.id[:8]}... title={source.title}")
-    return source.id
+        print(f"  正在上传: {file_name}")
+        source = await client.sources.add_file(notebook_id, str(file_path), wait=True)
+        print(f"  上传完成: source_id={source.id[:8]}... title={source.title}")
+        return source.id
+
+    return await retry_notebooklm_operation(f"上传 source {file_name}", _upload_once)
 
 
 async def create_infographic_with_retry(

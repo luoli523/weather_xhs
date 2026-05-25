@@ -11,7 +11,13 @@ from pathlib import Path
 
 from notebooklm import NotebookLMClient
 
-from src.common.notebooklm import find_or_create_notebook, upload_source, create_infographic_with_retry
+from src.common.notebooklm import (
+    NOTEBOOKLM_TRANSIENT_ERRORS,
+    create_infographic_with_retry,
+    find_or_create_notebook,
+    retry_notebooklm_operation,
+    upload_source,
+)
 
 INFOGRAPHIC_INTERVAL = 30  # 每张 infographic 之间的间隔（秒），避免触发 NotebookLM 限流
 from .index import ClothingAdvice
@@ -238,6 +244,7 @@ async def generate_city_infographics(
     output_path.mkdir(parents=True, exist_ok=True)
 
     downloaded_files = []
+    failed_cities: list[tuple[str, str]] = []
 
     # 预先抽取不重复的风格列表，城市数超过风格数时循环补充
     n = len(advices)
@@ -260,32 +267,54 @@ async def generate_city_infographics(
             city_prompt = _build_fallback_prompt(advice, gender=gender, style=style)
             print(f"    📋 回退到基础 prompt")
 
-        status = await create_infographic_with_retry(
-            client, notebook_id, source_id, city_prompt,
-        )
-        if not status:
-            print(f"    ❌ {advice.city_name} infographic 创建失败，跳过")
-            continue
+        try:
+            status = await create_infographic_with_retry(
+                client, notebook_id, source_id, city_prompt,
+            )
+            if not status:
+                failed_cities.append((advice.city_name, "infographic 创建失败"))
+                print(f"    ❌ {advice.city_name} infographic 创建失败，跳过")
+            else:
+                print(f"    等待生成完成 (task_id={status.task_id[:8]}...)...")
+                await retry_notebooklm_operation(
+                    f"等待 {advice.city_name} infographic 完成",
+                    lambda: client.artifacts.wait_for_completion(
+                        notebook_id, status.task_id, timeout=300
+                    ),
+                )
 
-        print(f"    等待生成完成 (task_id={status.task_id[:8]}...)...")
-        await client.artifacts.wait_for_completion(
-            notebook_id, status.task_id, timeout=300
-        )
+                artifact_name = f"{advice.city_name}_{advice.date}"
+                await retry_notebooklm_operation(
+                    f"命名 {advice.city_name} infographic",
+                    lambda: client.artifacts.rename(notebook_id, status.task_id, artifact_name),
+                )
+                print(f"    已命名: {artifact_name}")
 
-        artifact_name = f"{advice.city_name}_{advice.date}"
-        await client.artifacts.rename(notebook_id, status.task_id, artifact_name)
-        print(f"    已命名: {artifact_name}")
-
-        out_file = str(output_path / f"{artifact_name}.png")
-        await client.artifacts.download_infographic(
-            notebook_id, out_file, artifact_id=status.task_id
-        )
-        downloaded_files.append(out_file)
-        print(f"    已下载: {out_file}")
+                out_file = str(output_path / f"{artifact_name}.png")
+                await retry_notebooklm_operation(
+                    f"下载 {advice.city_name} infographic",
+                    lambda: client.artifacts.download_infographic(
+                        notebook_id, out_file, artifact_id=status.task_id
+                    ),
+                )
+                downloaded_files.append(out_file)
+                print(f"    已下载: {out_file}")
+        except NOTEBOOKLM_TRANSIENT_ERRORS as e:
+            err = f"{type(e).__name__}: {e}"
+            failed_cities.append((advice.city_name, err))
+            print(f"    ❌ {advice.city_name} NotebookLM 暂时失败，跳过: {err}")
 
         if i < len(advices) - 1:
             print(f"    ⏳ 等待 {INFOGRAPHIC_INTERVAL}s 后生成下一张...")
             await asyncio.sleep(INFOGRAPHIC_INTERVAL)
+
+    if failed_cities:
+        print("\n  ⚠ 以下城市未生成成功:")
+        for city, reason in failed_cities:
+            print(f"    - {city}: {reason}")
+
+    if advices and not downloaded_files:
+        raise RuntimeError("NotebookLM 未成功生成任何穿搭图片")
 
     return downloaded_files
 
